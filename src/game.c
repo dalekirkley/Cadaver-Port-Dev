@@ -32,7 +32,7 @@ struct Game {
     int cur;
     Obj hero;                         /* hero.slot = 8 */
     int facing, anim_t, moving;
-    unsigned tickno;
+    unsigned tickno; int walk_ticks;
     Sfx sfx[65]; Voice voice[4];
 };
 
@@ -105,7 +105,7 @@ int game_room(const Game *g) { return g->cur; }
 void game_hero(const Game *g, int *x, int *y, int *z) { *x = g->hero.x; *y = g->hero.y; *z = g->hero.z; }
 
 /* ---------------------------------------------------------------- sound */
-/* Original Paula clock: 3546895 / period = sample rate. Footstep (sound 0) period not yet decoded: 320 is a guess. */
+/* Original Paula clock: 3546895 / period = sample rate; volume is Paula's 0..64. */
 static void play_sound(Game *g, int id, int period, int vol) {
     if (id < 0 || id >= 65 || !g->sfx[id].len) return;
     int v = 0; for (int i = 0; i < 4; i++) if (!g->voice[i].step) { v = i; break; }
@@ -121,7 +121,7 @@ void game_audio_mix(Game *g, int16_t *out, int n, int rate) {
             if (p >= s->len) { vo->step = 0; continue; }
             acc += s->data[p] * vo->vol; vo->pos += vo->step / rate;
         }
-        acc = acc * 2; if (acc > 32767) acc = 32767; if (acc < -32768) acc = -32768;
+        acc = acc * 4; if (acc > 32767) acc = 32767; if (acc < -32768) acc = -32768;
         out[i] = (int16_t)acc;
     }
 }
@@ -208,7 +208,10 @@ void game_tick(Game *g, int joy) {
             if (out) try_exit(g, dx, dy);
         }
     }
-    if (g->moving && g->anim_t % 2 == 0 && ((g->anim_t / 2) & 1)) play_sound(g, 0, 320, 24);   /* footstep: after frames 0 and 2 */
+    /* Footstep (emulator trace of the original): sample record 22, period 320, volume 8, first heard 5 ticks into a
+       walk and then every 6 ticks. */
+    if (g->moving) { if (g->walk_ticks >= 4 && (g->walk_ticks - 4) % 6 == 0) play_sound(g, 22, 320, 8); g->walk_ticks++; }
+    else g->walk_ticks = 0;
     g->anim_t++;
 }
 
