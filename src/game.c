@@ -13,9 +13,9 @@
 
 typedef struct { int len; int8_t *data; } Sfx;
 typedef struct { int sfx; double pos, step; int vol; double left; } Voice;   /* left = seconds before the voice is cut (0 = play to the end) */
-typedef struct { int state, w, h; int16_t f[5]; int push; int16_t fx, fy, fz, name; uint8_t *px; } Sprite;
+typedef struct { int state, w, h; int16_t f[5]; int push; int16_t fx, fy, fz, name; uint8_t c, b16, b17, b1d; uint8_t *px; } Sprite;
 typedef struct { int16_t hx, hy; int w, h; uint8_t *px; } Frame;
-typedef struct { int x, y, z, slot, flags, pid; } Obj;       /* x,y = max corner, inclusive box */
+typedef struct { int x, y, z, slot, flags, pid, xflags; } Obj;       /* x,y = max corner, inclusive box */
 typedef struct { int x, y, orient; int box[4]; int slot, z, wx, wy; int idx, flags, b7; } Wall;
 typedef struct {
     int valid, x0, y0, sx, sy, basez, org, name, prefix;
@@ -35,6 +35,8 @@ struct Game {
     Obj hero;                         /* hero.slot = 8 */
     int facing, anim_t, moving;
     uint8_t font[46 * 24], fontmap[32]; char **text; int ntext; int day;
+    int has_icons; uint8_t icons[20 * 112]; uint16_t slotpos[8][4]; uint8_t verbtab[16];
+    int target, nverbs, verbs[8], menu, sel, prev_joy, msg, msg_t, ninv, inv[64];     /* verb menu state */
     uint16_t wallflag[MAX_WALLIDX]; int bump_timer;    /* wall-record flags, shared by the two rooms a wall joins */
     unsigned tickno; int walk_ticks, walk_step, start_room;
     Sfx sfx[65]; Voice voice[4];
@@ -60,7 +62,7 @@ Game *game_load(const char *path) {
         Sprite *sp = &g->spr[s]; sp->state = rd8(f);
         if (!sp->state) continue;
         for (int k = 0; k < 5; k++) sp->f[k] = (int16_t)rds16(f);
-        sp->push = rd8(f); sp->fx = rds16(f); sp->fy = rds16(f); sp->fz = rds16(f); sp->name = rds16(f);
+        sp->push = rd8(f); sp->fx = rds16(f); sp->fy = rds16(f); sp->fz = rds16(f); sp->name = rds16(f); sp->c = rd8(f); sp->b16 = rd8(f); sp->b17 = rd8(f); sp->b1d = rd8(f);
         if (sp->state == 1) { sp->w = rd16(f); sp->h = rd16(f); sp->px = malloc((size_t)sp->w * sp->h * 4); rd(f, sp->px, (size_t)sp->w * sp->h * 4); }
     }
     g->nframes = rd32(f); g->frames = calloc(g->nframes, sizeof(Frame));
@@ -82,7 +84,7 @@ Game *game_load(const char *path) {
         }
         int no = rd16(f); r->objs = calloc(no ? no : 1, sizeof(Obj)); r->nobj = 0;
         for (int k = 0; k < no; k++) {
-            Obj o; o.pid = rd16(f); o.x = rd8(f); o.y = rd8(f); o.z = rd8(f); o.flags = rd8(f); o.slot = rd16(f);
+            Obj o; o.pid = rd16(f); o.x = rd8(f); o.y = rd8(f); o.z = rd8(f); o.flags = rd8(f); o.slot = rd16(f); o.xflags = rd8(f);
             if (o.flags & 0x80) continue;                    /* destroyed / not spawned */
             if (o.slot == 8) { g->hero = o; g->start_room = (int)n; continue; }       /* the player placement */
             r->objs[r->nobj++] = o;
@@ -100,7 +102,13 @@ Game *game_load(const char *path) {
         for (int i = 0; i < g->ntext; i++) { int ln = rd16(f); g->text[i] = malloc(ln + 1); rd(f, g->text[i], ln); g->text[i][ln] = 0; }
         for (int n = 0; n < 100; n++) { g->rooms[n].name = rd8(f); g->rooms[n].prefix = (int16_t)rd16(f); }
     }
+    if (rd8(f) == 1) {                                                 /* optional: verb icons */
+        rd(f, g->icons, sizeof g->icons);
+        for (int i = 0; i < 8; i++) for (int k = 0; k < 4; k++) g->slotpos[i][k] = (uint16_t)((rd8(f) << 8) | rd8(f));
+        rd(f, g->verbtab, sizeof g->verbtab); g->has_icons = 1;
+    }
     fclose(f);
+    g->target = -1; g->msg = -1;
     g->cur = g->start_room; g->hero.x += 1;                                /* level start nudges the hero +1 in x */
     g->facing = JOY_RIGHT; g->day = 1;
     return g;
@@ -179,8 +187,8 @@ static int try_move(Game *g, Room *r, Obj *o, int dx, int dy, int depth) {
     o->x = nx; o->y = ny; return 1;
 }
 
-/* Name of the object the hero is touching in his facing direction (original $9090: probe one unit ahead with $8264). */
-static int facing_name(const Game *g) {
+/* Index of the object the hero is touching in his facing direction (original $9090: probe one unit ahead with $8264). */
+static int facing_target(const Game *g) {
     const Room *r = &g->rooms[g->cur];
     int dx = ((g->facing & JOY_RIGHT) ? 1 : 0) - ((g->facing & JOY_LEFT) ? 1 : 0);
     int dy = ((g->facing & JOY_DOWN) ? 1 : 0) - ((g->facing & JOY_UP) ? 1 : 0);
@@ -188,7 +196,7 @@ static int facing_name(const Game *g) {
     Obj ghost = g->hero; ghost.x += dx; ghost.y += dy; Box gb = box_of(g, &ghost);
     for (int i = 0; i < r->nobj; i++) {
         const Obj *q = &r->objs[i]; if (flat(g, q)) continue;
-        if (overlap(gb, box_of(g, q))) return g->spr[q->slot].name;
+        if (overlap(gb, box_of(g, q))) return i;
     }
     return -1;
 }
@@ -242,8 +250,54 @@ static int try_exit(Game *g, int dx, int dy) {
 /* Walking animation scripts (frame bank indices), from the original tables at $562e/$5694. */
 static const int walk_up[4] = {12, 13, 14, 15}, walk_down[4] = {11, 10, 9, 8}, walk_left[4] = {7, 6, 5, 4}, walk_right[4] = {0, 1, 2, 3};
 
+/* Verb list for the object being touched, in the order of the original builder ($8e44..$8f46). Verb id = icon id. */
+static void build_verbs(Game *g) {
+    Room *r = &g->rooms[g->cur]; g->nverbs = 0;
+    if (g->target < 0 || !g->has_icons) return;
+    const Obj *o = &r->objs[g->target]; const Sprite *s = &g->spr[o->slot]; int *v = g->verbs, n = 0;
+    if ((s->c & 2) && !(o->xflags & 4)) v[n++] = 2;                                   /* take */
+    if (s->b17 && !(o->xflags & 0x40) && g->verbtab[s->b17 & 15] < 0x80) v[n++] = g->verbtab[s->b17 & 15];
+    if (s->b1d == 0x12) v[n++] = 0xe;
+    if ((s->c & 1) && !(o->xflags & 4)) v[n++] = 0xa;
+    if (s->b17 != 6 && !(s->b16 & 0x80)) v[n++] = 0xb;
+    v[n++] = 6;
+    g->nverbs = n;
+}
+
+static void say(Game *g, int text_id) { g->msg = text_id; g->msg_t = 50; }
+
+static void exec_verb(Game *g, int verb) {
+    Room *r = &g->rooms[g->cur];
+    if (g->target < 0) return;
+    if (verb == 2 && g->ninv < 64) {                                                 /* take: the object goes to the rucksack */
+        g->inv[g->ninv++] = r->objs[g->target].pid;
+        memmove(&r->objs[g->target], &r->objs[g->target + 1], (size_t)(r->nobj - g->target - 1) * sizeof(Obj)); r->nobj--;
+        g->target = -1; g->nverbs = 0; return;
+    }
+    say(g, 4);                                                                        /* "NOTHING HAPPENS" until the other verbs exist */
+}
+
+static int move_sel(const Game *g, int dirs) {
+    int cx = g->slotpos[g->sel][0], cy = g->slotpos[g->sel][1], best = g->sel, bd = 1 << 30;
+    for (int i = 0; i < g->nverbs; i++) {
+        if (i == g->sel) continue;
+        int dx = g->slotpos[i][0] - cx, dy = g->slotpos[i][1] - cy;
+        int ok = ((dirs & JOY_LEFT) && dx < 0) || ((dirs & JOY_RIGHT) && dx > 0) || ((dirs & JOY_UP) && dy < 0) || ((dirs & JOY_DOWN) && dy > 0);
+        if (!ok) continue;
+        int d = dx * dx + dy * dy; if (d < bd) { bd = d; best = i; }
+    }
+    return best;
+}
+
 void game_tick(Game *g, int joy) {
     Room *r = &g->rooms[g->cur]; Obj *h = &g->hero;
+    int fire_edge = (joy & JOY_FIRE) && !(g->prev_joy & JOY_FIRE), new_dirs = (joy & 15) & ~(g->prev_joy & 15);
+    g->prev_joy = joy;
+    if (g->msg_t > 0) g->msg_t--;
+    if (g->menu) {                                                                     /* verb menu: the hero stands still */
+        if (g->target < 0 || g->nverbs == 0) g->menu = 0;
+        else { if (fire_edge) { g->menu = 0; exec_verb(g, g->verbs[g->sel]); } else if (new_dirs) g->sel = move_sel(g, new_dirs); joy &= ~15; }
+    } else if (fire_edge && g->target >= 0 && g->nverbs > 0) { g->menu = 1; g->sel = 0; joy &= ~15; }
     int dx = ((joy & JOY_RIGHT) ? 1 : 0) - ((joy & JOY_LEFT) ? 1 : 0);
     int dy = ((joy & JOY_DOWN) ? 1 : 0) - ((joy & JOY_UP) ? 1 : 0);
     g->tickno++;
@@ -266,6 +320,7 @@ void game_tick(Game *g, int joy) {
     } else g->walk_ticks = 0;
     g->anim_t++;
     if (g->bump_timer > 0) g->bump_timer--;
+    { int old = g->target; r = &g->rooms[g->cur]; g->target = facing_target(g); if (g->target != old) { g->menu = 0; g->msg_t = 0; } build_verbs(g); }
 }
 
 /* ---------------------------------------------------------------- rendering */
@@ -357,7 +412,25 @@ void game_render(const Game *g, uint32_t *fb) {
         if (r->prefix >= 0 && r->prefix < g->ntext) { strncat(buf, g->text[r->prefix], 40); strcat(buf, " "); }
         if (r->name < 19 && 126 + r->name < g->ntext) strncat(buf, g->text[126 + r->name], 40);
         draw_text(g, fb, buf, 205, 186, 108);
-        int nm = facing_name(g);
-        if (nm >= 0 && nm < g->ntext) draw_text(g, fb, g->text[nm], 229, 172, 84);   /* measured against the original: 3 px right of the nominal box */
+        int nm = g->msg_t > 0 ? g->msg : (g->target >= 0 ? g->spr[r->objs[g->target].slot].name : -1);
+        if (nm >= 0 && nm < g->ntext) draw_text(g, fb, g->text[nm], 229, 172, 84);
+        if (g->has_icons) for (int i = 0; i < g->nverbs; i++) {                       /* verb icons in the six HUD slots */
+            int ic = g->verbs[i], sx = g->slotpos[i][0], sy = g->slotpos[i][1];
+            const uint8_t *src = g->icons + ic * 112;
+            for (int y = 0; y < 14; y++) for (int x = 0; x < 16; x++) {
+                int v = 0; for (int pl = 0; pl < 4; pl++) { int w = (src[pl * 28 + y * 2] << 8) | src[pl * 28 + y * 2 + 1]; v |= ((w >> (15 - x)) & 1) << pl; }
+                if (!v) continue;
+                fb[(sy + y) * SCREEN_W + sx + x] = g->pal[v][0] | g->pal[v][1] << 8 | g->pal[v][2] << 16 | 0xFF000000u;
+            }
+            if (g->menu && i == g->sel) {                                                /* highlight: 2px ring (colour 10 on black, 14 on the slot background) */
+                for (int y = sy - 1; y <= sy + 14; y++) for (int x = sx - 1; x <= sx + 16; x++) {
+                    int edge = (y == sy - 1 || y == sy + 14 || x == sx - 1 || x == sx + 16), inner = (y == sy || y == sy + 13 || x == sx || x == sx + 15);
+                    if (!edge && !inner) continue;
+                    uint32_t *px = &fb[y * SCREEN_W + x]; uint32_t bg = g->pal[9][0] | g->pal[9][1] << 8 | g->pal[9][2] << 16 | 0xFF000000u;
+                    int idx = edge ? 10 : 14;
+                    if (edge ? (*px == 0xFF000000u) : (*px == bg)) *px = g->pal[idx][0] | g->pal[idx][1] << 8 | g->pal[idx][2] << 16 | 0xFF000000u;
+                }
+            }
+        }   /* measured against the original: 3 px right of the nominal box */
     }
 }

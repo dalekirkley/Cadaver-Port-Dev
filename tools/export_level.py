@@ -22,7 +22,7 @@ for s in range(255):
     e=L.g2.rec(s);im=L.sprite(s,0) if e else None
     if e is None or len(e)<0x20:P('B',0);continue
     P('B',1 if im is not None else 2)
-    F=[s16(e,x) for x in (2,4,0x10,0x12,0x14)];P('5h',*F);P('B',e[0x0c]&3);P('3h',F[2],F[3],F[4]);P('h',s16(e,0xa))
+    F=[s16(e,x) for x in (2,4,0x10,0x12,0x14)];P('5h',*F);P('B',e[0x0c]&3);P('3h',F[2],F[3],F[4]);P('h',s16(e,0xa));P('4B',e[0x0c],e[0x16],e[0x17],e[0x1d])
     if im is not None:P('HH',im.width,im.height);o+=im.tobytes()
 # player frames
 RGB=L.rgb;bank.PAL=list(range(16));bank.rgb=lambda i:RGB[i]
@@ -42,7 +42,7 @@ for n in range(100):
     for w in W:P('hhB4hHBhhHHB',w['x'],w['y'],w['orient'],*w['box'],w['slot'],w['z'],w['wx'],w['wy'],w['idx'],w['flags'],w['b7'])
     lst=L.g5.rec(n);ids=[u16(lst,k) for k in range(0,len(lst),2)];P('H',len(ids))
     for pid in ids:
-        p=L.g6.rec(pid);P('HBBBBH',pid,p[0],p[1],p[2],p[3],u16(p,6))
+        p=L.g6.rec(pid);P('HBBBBHB',pid,p[0],p[1],p[2],p[3],u16(p,6),p[15] if len(p)>15 else 0)
 # sound effects: 65 records at $3763c (14 bytes: i16 flag, u16 ?, u16 len_words, u32 addr, u32 loop) -> raw signed 8-bit samples
 P('I',65)
 for i in range(65):
@@ -73,4 +73,9 @@ for n in range(100):
     r=L.room(n)
     if r:P('Bh',r['raw'][0x1a],s16(r['raw'],0x18))
     else:P('Bh',255,-1)
+# verb icons (16x14, plane-major 4 planes of 14 words, 20 icons) + slot table ($59a6: x,y,w,h words) + verb->icon list for $17 types ($5604)
+ip=os.environ.get('CADAVER_ICONS')
+if ip and os.path.exists(ip):
+    P('B',1);o+=open(ip,'rb').read()[:20*112];o+=bytes(L.game[0x59a6-0xb8:0x59a6-0xb8+64]);o+=bytes(L.game[0x5604-0xb8:0x5604-0xb8+16])
+else:P('B',0)
 open(out,'wb').write(o);print(len(o),'bytes')
