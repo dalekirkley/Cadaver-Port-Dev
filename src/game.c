@@ -38,7 +38,7 @@ struct Game {
     int facing, anim_t, moving;
     uint8_t font[46 * 24], fontmap[32]; char **text; int ntext; int day; int energy; int jump_t, jump_z0;
     int has_scroll; uint8_t scroll_tiles[18 * 32], scroll_map[0x30], font5[46 * 20]; int nexam, nuse; uint16_t exam_pid[512], exam_text[512], use_pid[512], use_text[512];   /* examine scroll */
-    int scroll_t; char scroll_str[256]; long score; int map_open; uint8_t visited[100];
+    int scroll_t; char scroll_str[256]; long score; int map_open, map_px, map_py; uint8_t visited[100];
     int has_icons; uint8_t icons[20 * 112]; uint16_t slotpos[8][4]; uint8_t verbtab[16];
     int target, nverbs, verbs[8], menu, sel, prev_joy, msg, msg_t, ninv, inv[64];     /* verb menu state */
     uint16_t wallflag[MAX_WALLIDX]; int bump_timer;    /* wall-record flags, shared by the two rooms a wall joins */
@@ -371,8 +371,12 @@ void game_tick(Game *g, int joy) {
     int fire_edge = (joy & JOY_FIRE) && !(g->prev_joy & JOY_FIRE), new_dirs = (joy & 15) & ~(g->prev_joy & 15);
     int prev = g->prev_joy; g->prev_joy = joy;
     g->visited[g->cur] = 1;
-    if ((joy & JOY_MAP) && !(prev & JOY_MAP) && g->has_scroll) g->map_open ^= 1;                 /* F1: map of the rooms entered so far */
-    if (g->map_open) return;                                                                    /* the game waits while the map is up */
+    if ((joy & JOY_MAP) && !(prev & JOY_MAP) && g->has_scroll) { g->map_open ^= 1; g->map_px = g->map_py = 0; }     /* F1: map of the rooms entered so far */
+    if (g->map_open) {                                                                          /* the game waits; the joystick pans the view (1 cell per tick), fire closes it ($a3e8..$a4dc) */
+        g->map_px += ((joy & JOY_RIGHT) ? 1 : 0) - ((joy & JOY_LEFT) ? 1 : 0); g->map_py += ((joy & JOY_DOWN) ? 1 : 0) - ((joy & JOY_UP) ? 1 : 0);
+        if ((joy & JOY_FIRE) && !(prev & JOY_FIRE)) g->map_open = 0;
+        return;
+    }
     if (g->scroll_t > 0) { g->scroll_t--; return; }
     if (g->msg_t > 0) g->msg_t--;
     if (g->menu) {                                                                     /* verb menu: the hero stands still */
@@ -516,7 +520,7 @@ static void draw_map(const Game *g, uint32_t *fb) {
     for (int pass = 0; pass < 2; pass++) for (int i = 0; i < 100; i++) {
         const Room *r = &g->rooms[i]; if (!r->valid || !g->visited[i] || (i == g->cur) != (pass == 1)) continue;
         if (!pass) n++; else n++;
-        int x = 160 + 2 * r->x0 - (2 * cur->x0 + cur->sx), y = 78 + 2 * r->y0 - (2 * cur->y0 + cur->sy), w = 2 * r->sx, h = 2 * r->sy;
+        int x = 160 + 2 * r->x0 - (2 * cur->x0 + cur->sx) - 2 * g->map_px, y = 78 + 2 * r->y0 - (2 * cur->y0 + cur->sy) - 2 * g->map_py, w = 2 * r->sx, h = 2 * r->sy;
         uint32_t col = pass ? bright : dark;
         for (int k = 0; k <= w; k++) for (int e = 0; e < 2; e++) { int X = x + k, Y = y + (e ? h : 0); if (X >= 104 && X < 216 && Y >= 38 && Y < 126) fb[Y * SCREEN_W + X] = col; }
         for (int k = 0; k <= h; k++) for (int e = 0; e < 2; e++) { int X = x + (e ? w : 0), Y = y + k; if (X >= 104 && X < 216 && Y >= 38 && Y < 126) fb[Y * SCREEN_W + X] = col; }
