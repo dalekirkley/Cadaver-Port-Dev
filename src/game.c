@@ -9,6 +9,7 @@
 #define HERO_FY 7
 #define HERO_FZ 30
 #define ENERGY_MAX 100
+#define SCROLL_TICKS 75                    /* the examine scroll stays up 3 s (150 video frames in the original), input and movement frozen */
 #define MAX_PUSH_DEPTH 0x1f
 #define WALK_TICKS_PER_FRAME 3   /* measured in the original: 6 video frames per walk frame */
 
@@ -36,6 +37,8 @@ struct Game {
     Obj hero;                         /* hero.slot = 8 */
     int facing, anim_t, moving;
     uint8_t font[46 * 24], fontmap[32]; char **text; int ntext; int day; int energy; int jump_t, jump_z0;
+    int has_scroll; uint8_t scroll_tiles[18 * 32], scroll_map[0x30], font5[46 * 20]; int nexam; uint16_t exam_pid[512], exam_text[512];   /* examine scroll */
+    int scroll_t; char scroll_str[256]; long score;
     int has_icons; uint8_t icons[20 * 112]; uint16_t slotpos[8][4]; uint8_t verbtab[16];
     int target, nverbs, verbs[8], menu, sel, prev_joy, msg, msg_t, ninv, inv[64];     /* verb menu state */
     uint16_t wallflag[MAX_WALLIDX]; int bump_timer;    /* wall-record flags, shared by the two rooms a wall joins */
@@ -107,6 +110,12 @@ Game *game_load(const char *path) {
         rd(f, g->icons, sizeof g->icons);
         for (int i = 0; i < 8; i++) for (int k = 0; k < 4; k++) { int hi = rd8(f), lo = rd8(f); g->slotpos[i][k] = (uint16_t)((hi << 8) | lo); }   /* explicit order: C leaves operand order unspecified */
         rd(f, g->verbtab, sizeof g->verbtab); g->has_icons = 1;
+    }
+    if (rd8(f) == 1) {                                                 /* optional: scroll panel tiles, layout, small font, examine texts */
+        rd(f, g->scroll_tiles, sizeof g->scroll_tiles); rd(f, g->scroll_map, sizeof g->scroll_map); rd(f, g->font5, sizeof g->font5);
+        g->nexam = rd16(f); if (g->nexam > 512) g->nexam = 512;
+        for (int i = 0; i < g->nexam; i++) { g->exam_pid[i] = (uint16_t)rd16(f); g->exam_text[i] = (uint16_t)rd16(f); }
+        g->has_scroll = 1;
     }
     fclose(f);
     g->target = -1; g->msg = -1;
@@ -288,6 +297,12 @@ static void exec_verb(Game *g, int verb) {
         memmove(&r->objs[g->target], &r->objs[g->target + 1], (size_t)(r->nobj - g->target - 1) * sizeof(Obj)); r->nobj--;
         g->target = -1; g->nverbs = 0; return;
     }
+    if (verb == 0xb && g->has_scroll) {                                               /* examine: the object's description on a parchment scroll */
+        int pid = r->objs[g->target].pid;
+        for (int i = 0; i < g->nexam; i++) if (g->exam_pid[i] == pid && g->exam_text[i] < g->ntext && g->text[g->exam_text[i]][0]) {
+            snprintf(g->scroll_str, sizeof g->scroll_str, "%s.", g->text[g->exam_text[i]]); g->scroll_t = SCROLL_TICKS; return;
+        }
+    }
     say(g, 4);                                                                        /* "NOTHING HAPPENS" until the other verbs exist */
 }
 
@@ -347,6 +362,7 @@ void game_tick(Game *g, int joy) {
     Room *r = &g->rooms[g->cur]; Obj *h = &g->hero;
     int fire_edge = (joy & JOY_FIRE) && !(g->prev_joy & JOY_FIRE), new_dirs = (joy & 15) & ~(g->prev_joy & 15);
     g->prev_joy = joy;
+    if (g->scroll_t > 0) { g->scroll_t--; return; }
     if (g->msg_t > 0) g->msg_t--;
     if (g->menu) {                                                                     /* verb menu: the hero stands still */
         if (g->target < 0 || g->nverbs == 0) g->menu = 0;
@@ -454,6 +470,51 @@ static void draw_text_clip(const Game *g, uint32_t *fb, const char *str, int x, 
 }
 static void draw_text(const Game *g, uint32_t *fb, const char *str, int x, int y, int width) { draw_text_clip(g, fb, str, x, y, width, 0, SCREEN_W, 0); }
 
+/* ---- examine scroll: parchment built from 8x8 tiles (layout table at $55e8), text in the 5-row font, word-wrapped like the original ($dc98). */
+static void scroll_tile(const Game *g, uint32_t *fb, int idx, int x0, int y0) {
+    for (int r = 0; r < 8; r++) for (int c = 0; c < 8; c++) {
+        int v = 0; for (int p = 0; p < 4; p++) v |= ((g->scroll_tiles[idx * 32 + r * 4 + p] >> (7 - c)) & 1) << p;
+        int X = x0 + c, Y = y0 + r; if (X < 0 || X >= SCREEN_W || Y < 0 || Y >= SCREEN_H) continue;
+        fb[Y * SCREEN_W + X] = g->pal[v][0] | g->pal[v][1] << 8 | g->pal[v][2] << 16 | 0xFF000000u;
+    }
+}
+static void draw_scroll(const Game *g, uint32_t *fb) {
+    const uint8_t *T = g->scroll_map; const char *str = g->scroll_str; int len = (int)strlen(str);
+    int maxw = 12, d0 = len - 48; if (d0 >= 0) { do { maxw++; d0 -= maxw; } while (d0 > 0); }        /* chars per line grows with the text */
+    char lines[16][48]; int nl = 0;
+    for (const char *p = str; *p && nl < 16;) {
+        int n = 0, best = 0, k = 0;                                                    /* longest run of whole words that fits */
+        for (;;) {
+            while (p[k] && p[k] != ' ') k++;
+            if (k > maxw) break;
+            best = k; if (!p[k]) break; k++;
+            (void)n;
+        }
+        if (best == 0) { best = k > 47 ? 47 : k; }                                     /* a word longer than the line: break it */
+        memcpy(lines[nl], p, (size_t)best); lines[nl][best] = 0; nl++;
+        p += best; if (*p == ' ') p++;
+    }
+    int wt = maxw * 6 / 8, body = nl * 6 / 8, x0 = 32, y0 = 20, W = (wt + 2) * 8;
+    int rowy = y0;
+    #define TROW(l, m, r) do { scroll_tile(g, fb, (l), x0, rowy); for (int k = 0; k < wt; k++) scroll_tile(g, fb, (m), x0 + 8 + 8 * k, rowy); scroll_tile(g, fb, (r), x0 + 8 + 8 * wt, rowy); rowy += 8; } while (0)
+    TROW(T[0], T[1], T[2]); TROW(T[3], T[4], T[5]);
+    for (int b = 0; b < body; b++) { unsigned h = (unsigned)(b * 2654435761u) >> 7; TROW(T[6 + (h & 7)], 0xd, T[14 + ((h >> 3) & 7)]); }
+    TROW(T[22], T[23], T[24]); TROW(T[25], T[26], T[27]);
+    #undef TROW
+    for (int l = 0; l < nl; l++) {
+        int x = x0 + (W - (int)strlen(lines[l]) * 6) / 2, y = y0 + 13 + 6 * l;
+        for (const char *c = lines[l]; *c; c++, x += 6) {
+            int ch = (unsigned char)*c, gi; if (ch == ' ' || ch < 0x21) continue;
+            gi = ch >= 0x41 ? ch - 0x41 : g->fontmap[ch - 0x21]; if (gi >= 46) continue;
+            for (int row = 0; row < 5; row++) for (int col = 0; col < 8; col++) {
+                int v = 0; for (int p = 0; p < 4; p++) v |= ((g->font5[gi * 20 + row * 4 + p] >> (7 - col)) & 1) << p;
+                int X = x + col, Y = y + row; if (!v || X < 0 || X >= SCREEN_W || Y < 0 || Y >= SCREEN_H) continue;
+                fb[Y * SCREEN_W + X] = g->pal[v][0] | g->pal[v][1] << 8 | g->pal[v][2] << 16 | 0xFF000000u;
+            }
+        }
+    }
+}
+
 void game_render(const Game *g, uint32_t *fb) {
     const Room *r = &g->rooms[g->cur];
     memcpy(fb, r->bg, SCREEN_W * SCREEN_H * 4);
@@ -537,6 +598,7 @@ void game_render(const Game *g, uint32_t *fb) {
         }   /* measured against the original: 3 px right of the nominal box */
     }
     if (g->hud) draw_energy(g, fb);
+    if (g->scroll_t > 0) draw_scroll(g, fb);
 }
 
 /* Debug aid for the headless driver: put the hero somewhere. */

@@ -128,4 +128,19 @@ ip=os.environ.get('CADAVER_ICONS')
 if ip and os.path.exists(ip):
     P('B',1);o+=open(ip,'rb').read()[:20*112];o+=bytes(L.game[0x59a6-0xb8:0x59a6-0xb8+64]);o+=bytes(L.game[0x5604-0xb8:0x5604-0xb8+16])
 else:P('B',0)
-open(out,'wb').write(o);print(len(o),'bytes')
+# scroll panel (examine text): 18 tiles of 8x8 (4 plane bytes per row) from $464a, the layout table at $55e8 (0x30 bytes), the small font (46 glyphs,
+# 5 rows x 4 plane bytes, $488a) and the examine descriptions: every placement script block "event $10: action $48 text" gives (placement id, text id).
+exam=[]
+for i in range(L.g6.n):
+    e=L.g6.rec(i)
+    if len(e)<0x11 or not e[0x0b]:continue
+    p=0x10
+    for _ in range(e[0x0b]):
+        if p>=len(e) or not e[p]:break
+        ln=e[p]
+        if e[p+1]&0x7f==0x10 and ln>=6 and e[p+2] in (0x48,0x1c) and i not in [x[0] for x in exam]:exam.append((i,(e[p+3]<<8)|e[p+4]))
+        p+=ln
+P('B',1);o+=bytes(L.game[0x464a-0xb8:0x464a-0xb8+18*32]);o+=bytes(L.game[0x55e8-0xb8:0x55e8-0xb8+0x30]);o+=bytes(L.game[0x488a-0xb8:0x488a-0xb8+46*20])
+P('H',len(exam))
+for pid,tx in exam:P('HH',pid,tx)
+open(out,'wb').write(o);print(len(o),'bytes,',len(exam),'examine texts')
