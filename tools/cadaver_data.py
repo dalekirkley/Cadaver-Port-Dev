@@ -128,6 +128,13 @@ class Level:
         if not r:return None
         sx,sy=r['sx'],r['sy'];org=self.origin(sx,sy)
         im=Image.new('RGBA',(320,200),(0,0,0,255))
+        # floor
+        fl=self.g0.rec(n);const=not(r['flags']&4)
+        for j in range(sy):
+            for i in range(sx):
+                idx=j*sx+i;t=(fl[0] if const else (fl[idx] if idx<len(fl) else 0)) if fl else 0
+                if t:
+                    bl,bb=divmod(org+322*i+318*j,40);tt=self.floor_tile(t);im.paste(tt,(bb*8,bl),tt)
         # wall cubes
         gr=self.g1.rec(n)
         if r['flags']&0x20 and gr:
@@ -143,13 +150,6 @@ class Level:
                 for h,t in enumerate(row):
                     if t==0 or t>=80:continue
                     px,py=self.project(org,cx*8+7,cy*8+7,h*16,F);tt=self.wall_tile(t);im.paste(tt,(px,py),tt)
-        # floor
-        fl=self.g0.rec(n);const=not(r['flags']&4)
-        for j in range(sy):
-            for i in range(sx):
-                idx=j*sx+i;t=(fl[0] if const else (fl[idx] if idx<len(fl) else 0)) if fl else 0
-                if t:
-                    bl,bb=divmod(org+322*i+318*j,40);tt=self.floor_tile(t);im.paste(tt,(bb*8,bl),tt)
         # objects
         if objects:
             items=[]
