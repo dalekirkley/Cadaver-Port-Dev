@@ -374,9 +374,10 @@ static int hero_frame(const Game *g) {
     return g->moving ? a[g->walk_step] : idle_frame;
 }
 
+static void draw_text(const Game *g, uint32_t *fb, const char *str, int x, int y, int width);
 /* Original text printer ($10f82): 8x6 glyphs, advance 7, centred in a box; glyph pixel value = palette index (0 = clear). */
-static void draw_text(const Game *g, uint32_t *fb, const char *str, int x, int y, int width) {
-    int len = (int)strlen(str); x += (width - len * 7) / 2;
+static void draw_text_clip(const Game *g, uint32_t *fb, const char *str, int x, int y, int width, int clip0, int clip1, int scroll) {
+    int len = (int)strlen(str); x += (width - len * 7) / 2 - scroll;
     for (const char *c = str; *c; c++, x += 7) {
         int ch = (unsigned char)*c, gi;
         if (ch == ' ' || ch < 0x21) continue;
@@ -385,11 +386,12 @@ static void draw_text(const Game *g, uint32_t *fb, const char *str, int x, int y
         const uint8_t *gl = g->font + gi * 24;
         for (int row = 0; row < 6; row++) for (int col = 0; col < 8; col++) {
             int v = 0; for (int p = 0; p < 4; p++) v |= ((gl[row * 4 + p] >> (7 - col)) & 1) << p;
-            int X = x + col, Y = y + row; if (!v || X < 0 || X >= SCREEN_W || Y < 0 || Y >= SCREEN_H) continue;
+            int X = x + col, Y = y + row; if (!v || X < clip0 || X >= clip1 || X < 0 || X >= SCREEN_W || Y < 0 || Y >= SCREEN_H) continue;
             fb[Y * SCREEN_W + X] = g->pal[v][0] | g->pal[v][1] << 8 | g->pal[v][2] << 16 | 0xFF000000u;
         }
     }
 }
+static void draw_text(const Game *g, uint32_t *fb, const char *str, int x, int y, int width) { draw_text_clip(g, fb, str, x, y, width, 0, SCREEN_W, 0); }
 
 void game_render(const Game *g, uint32_t *fb) {
     const Room *r = &g->rooms[g->cur];
@@ -421,9 +423,16 @@ void game_render(const Game *g, uint32_t *fb) {
         buf[0] = 0;
         if (r->prefix >= 0 && r->prefix < g->ntext) { strncat(buf, g->text[r->prefix], 40); strcat(buf, " "); }
         if (r->name < 19 && 126 + r->name < g->ntext) strncat(buf, g->text[126 + r->name], 40);
-        draw_text(g, fb, buf, 205, 186, 108);
         int nm = g->msg_t > 0 ? g->msg : (g->target >= 0 ? g->spr[r->objs[g->target].slot].name : -1);
-        if (nm >= 0 && nm < g->ntext) draw_text(g, fb, g->text[nm], 229, 172, 84);
+        int longmsg = nm >= 0 && nm < g->ntext && (int)strlen(g->text[nm]) * 7 > 84;      /* too wide for the item box: use the room-name strip */
+        if (longmsg) {
+            int w = (int)strlen(g->text[nm]) * 7, sc = 0;
+            if (w > 108) { int t = 50 - g->msg_t; sc = t * (w - 108) / 40; if (sc > w - 108) sc = w - 108; if (sc < 0) sc = 0; }   /* scroll when wider than the strip */
+            draw_text_clip(g, fb, g->text[nm], 202, 186, w > 108 ? w : 108, 202, 311, sc);
+        } else {
+            draw_text(g, fb, buf, 205, 186, 108);
+            if (nm >= 0 && nm < g->ntext) draw_text(g, fb, g->text[nm], 229, 172, 84);
+        }
         if (g->has_icons) for (int i = 0; i < g->nverbs; i++) {                       /* verb icons in the six HUD slots */
             int ic = g->verbs[i], sx = g->slotpos[i][0], sy = g->slotpos[i][1];
             if (ic < 0 || ic >= 20 || sx < 1 || sy < 1 || sx + 17 > SCREEN_W || sy + 15 > SCREEN_H) continue;
@@ -434,12 +443,12 @@ void game_render(const Game *g, uint32_t *fb) {
                 fb[(sy + y) * SCREEN_W + sx + x] = g->pal[v][0] | g->pal[v][1] << 8 | g->pal[v][2] << 16 | 0xFF000000u;
             }
             if (g->menu && i == g->sel) {                                                /* highlight: 2px ring (colour 10 on black, 14 on the slot background) */
-                for (int y = sy - 1; y <= sy + 14; y++) for (int x = sx - 1; x <= sx + 16; x++) {
-                    int edge = (y == sy - 1 || y == sy + 14 || x == sx - 1 || x == sx + 16), inner = (y == sy || y == sy + 13 || x == sx || x == sx + 15);
+                for (int y = sy - 1; y <= sy + 14; y++) for (int x = sx - 1; x <= sx + 15; x++) {
+                    int edge = (y == sy - 1 || y == sy + 14 || x == sx - 1 || x == sx + 15), inner = (y == sy || y == sy + 13 || x == sx || x == sx + 14);
                     if (!edge && !inner) continue;
                     uint32_t *px = &fb[y * SCREEN_W + x]; uint32_t bg = g->pal[9][0] | g->pal[9][1] << 8 | g->pal[9][2] << 16 | 0xFF000000u;
                     int idx = edge ? 10 : 14;
-                    if (edge ? (*px == 0xFF000000u) : (*px == bg)) *px = g->pal[idx][0] | g->pal[idx][1] << 8 | g->pal[idx][2] << 16 | 0xFF000000u;
+                    if (edge ? (*px == 0xFF000000u || x == sx + 15) : (*px == bg)) *px = g->pal[idx][0] | g->pal[idx][1] << 8 | g->pal[idx][2] << 16 | 0xFF000000u;
                 }
             }
         }   /* measured against the original: 3 px right of the nominal box */
