@@ -38,7 +38,7 @@ struct Game {
     Obj hero;                         /* hero.slot = 8 */
     int facing, anim_t, moving;
     uint8_t font[46 * 24], fontmap[32]; char **text; int ntext; int day; int energy; int jump_t, jump_z0;
-    int has_scroll; uint8_t scroll_tiles[18 * 32], scroll_map[0x30], font5[46 * 20]; int nexam, nuse, ntake; uint16_t take_pid[512]; int16_t take_gold[512], take_xp[512]; int nvm; uint16_t vm_pid[256]; uint8_t vm_len[256], vm_code[256][255]; uint16_t exam_pid[512], exam_text[512], use_pid[512], use_text[512];   /* examine scroll */
+    int has_scroll; uint8_t scroll_tiles[18 * 32], scroll_map[0x30], font5[46 * 20]; int nexam, nuse, ntake; uint16_t take_pid[512]; int16_t take_gold[512], take_xp[512]; uint8_t counter[256]; int nvm; uint16_t vm_pid[256]; uint8_t vm_len[256], vm_code[256][255]; uint16_t exam_pid[512], exam_text[512], use_pid[512], use_text[512];   /* examine scroll */
     int scroll_t; char scroll_str[256]; long score; int map_open, map_px, map_py, status_open; long gold, xp, level; uint8_t visited[100];
     int has_icons; uint8_t icons[20 * 112]; uint16_t slotpos[8][4]; uint8_t verbtab[16];
     int target, nverbs, verbs[8], menu, sel, prev_joy, msg, msg_t, ninv, inv[64];     /* verb menu state */
@@ -255,41 +255,60 @@ static int neighbour(const Game *g, int wx, int wy, int horiz) {
    needs the key item with that id (inventory not implemented yet, so such doors stay shut). */
 static int wall_closed(const Game *g, const Wall *w) { return w->idx < MAX_WALLIDX ? g->wallflag[w->idx] != 0 : w->flags != 0; }
 
-/* Event-5 world scripts (levers, switches), interpreted like the original dispatcher ($fab0/$fcca):
-   1e = test the object's state bit, 0e len .. 16 [0f len .. 16] = if/else on that test, 1b w word = set wall record flags,
-   0a w = unlock wall record (flags 0), 1f/20/21 = clear/set/toggle the object's state bit, 16/17 = end. Unknown ops stop the script. */
-static void run_script(Game *g, Obj *self, const uint8_t *c, int len) {
-    int state = 0, p = 0;
-    while (p < len) {
-        int op = c[p++];
-        switch (op) {
-        case 0x17: return;
-        case 0x16: break;
-        case 0x1e: state = (self->flags & 1) != 0; break;
-        case 0x0e: {
-            int l = c[p]; int pos = p;
-            if (state) {                                                  /* true: run the 'then' ops, skip the else part */
-                p++; state = 0;
-                /* the 'then' ops are executed by the main loop up to the 16; remember to skip the else block afterwards */
-                int q = p; int depth = 0; (void)depth;
-                while (q < len && c[q] != 0x16) q++;
-                run_script(g, self, c + p, q - p);
-                p = q + 1;
-                if (p < len && c[p] == 0x0f) { p++; p += c[p]; }
-            } else {                                                      /* false: jump to the else block */
-                p = pos + l;
-                if (p < len && c[p] == 0x0f) p += 2;
-            }
-            break; }
-        case 0x0f: return;
-        case 0x1b: { int w = c[p++]; int v = (c[p] << 8) | c[p + 1]; p += 2; if (w < MAX_WALLIDX) g->wallflag[w] = (uint16_t)v; if (v) g->walldoor[w] = 1; break; }
-        case 0x0a: { int w = c[p++]; if (w < MAX_WALLIDX && g->wallflag[w]) { g->wallflag[w] = 0; play_sound(g, 0x12); } break; }
-        case 0x1f: self->flags &= ~1; break;
-        case 0x20: self->flags |= 1; break;
-        case 0x21: self->flags ^= 1; break;
-        default: return;
+/* Placement-script interpreter (event 5 = USE/switch scripts), following the original dispatcher ($fab0, ops via table $fcca).
+   A condition op sets g->cond (the original's $8de counter: true = nonzero); 0e tests it:  0e len <then ops> 16 [0f len <else ops> 16].
+   Ops handled: 1e self state bit, 10 other object's state bit, 22 item in rucksack, 28 counter compare, 11/12/13 set/clear/toggle other's bit,
+   1f/20/21 same on self, 27 counter add, 1b/0a wall record lock/unlock, 1c text, 2d energy change, 46 sound, 1d/16/17 end markers. Unknown ops stop. */
+static void change_energy(Game *g, int delta);
+static Obj *find_obj(Game *g, int pid) {
+    for (int rm = 0; rm < 100; rm++) { Room *r = &g->rooms[rm]; if (!r->valid) continue; for (int i = 0; i < r->nobj; i++) if (r->objs[i].pid == pid) return &r->objs[i]; }
+    return NULL;
+}
+typedef struct { Game *g; Obj *self; const uint8_t *c; int len, p, cond, stop; } Vm;
+static int vm_word(Vm *m) { int v = (m->c[m->p] << 8) | m->c[m->p + 1]; m->p += 2; return v; }
+static void vm_op(Vm *m, int op);
+static void vm_block(Vm *m) {                                         /* run ops until the 16 that closes the block */
+    while (!m->stop && m->p < m->len) { int op = m->c[m->p++]; if (op == 0x16) return; vm_op(m, op); }
+    m->stop = 1;
+}
+static void vm_op(Vm *m, int op) {
+    Game *g = m->g; Obj *o;
+    switch (op) {
+    case 0x17: m->stop = 1; break;
+    case 0x16: case 0x1d: break;
+    case 0x1e: m->cond = (m->self->flags & 1) ? m->cond + 1 : 0; break;
+    case 0x10: o = find_obj(g, vm_word(m)); m->cond = (o && (o->flags & 1)) ? m->cond + 1 : 0; break;
+    case 0x11: o = find_obj(g, vm_word(m)); if (o) o->flags |= 1; break;
+    case 0x12: o = find_obj(g, vm_word(m)); if (o) o->flags &= ~1; break;
+    case 0x13: o = find_obj(g, vm_word(m)); if (o) o->flags ^= 1; break;
+    case 0x1f: m->self->flags &= ~1; break;
+    case 0x20: m->self->flags |= 1; break;
+    case 0x21: m->self->flags ^= 1; break;
+    case 0x22: { int id = vm_word(m), has = 0; for (int i = 0; i < g->ninv; i++) if (g->inv[i] == id) has = 1; m->cond = has ? m->cond + 1 : 0; break; }
+    case 0x27: { int n = m->c[m->p++]; g->counter[n] = (uint8_t)(g->counter[n] + m->c[m->p++]); break; }
+    case 0x28: { int n = m->c[m->p++], mode = m->c[m->p++], v = m->c[m->p++], x = g->counter[n];
+        int ok = mode == 0 ? x <= v : mode == 1 ? x >= v : mode == 2 ? x != v : x == v;      /* modes as in $107aa: 0 le, 1 ge, 2 ne, 3 eq */
+        m->cond = ok ? m->cond + 1 : 0; break; }
+    case 0x1b: { int w = m->c[m->p++]; int v = vm_word(m); if (w < MAX_WALLIDX) { g->wallflag[w] = (uint16_t)v; if (v) g->walldoor[w] = 1; } break; }
+    case 0x0a: { int w = m->c[m->p++]; if (w < MAX_WALLIDX && g->wallflag[w]) { g->wallflag[w] = 0; play_sound(g, 0x12); } break; }
+    case 0x1c: { int t = vm_word(m); if (t < g->ntext && g->text[t][0]) { snprintf(g->scroll_str, sizeof g->scroll_str, "%s", g->text[t]); g->scroll_t = SCROLL_TICKS; } break; }
+    case 0x2d: { int d = vm_word(m); if (d >= 32768) d -= 65536; change_energy(g, d); break; }
+    case 0x46: play_sound(g, m->c[m->p++]); break;
+    case 0x0e: {
+        if (m->cond) {                                                /* run the then part, then skip an else part */
+            m->cond = 0; m->p++; vm_block(m);
+            if (!m->stop && m->p < m->len && m->c[m->p] == 0x0f) { m->p++; m->p += m->c[m->p]; }
+        } else {
+            m->cond = 0; int l = m->c[m->p]; m->p += l;
+            if (m->p < m->len && m->c[m->p] == 0x0f) { m->p += 2; vm_block(m); }
         }
+        break; }
+    default: m->stop = 1; break;                                      /* not decoded yet */
     }
+}
+static void run_script(Game *g, Obj *self, const uint8_t *c, int len) {
+    Vm m = { g, self, c, len, 0, 0, 0 };
+    while (!m.stop && m.p < m.len) vm_op(&m, c[m.p++]);
 }
 
 static void say(Game *g, int text_id);
@@ -375,9 +394,9 @@ static void exec_verb(Game *g, int verb) {
             snprintf(g->scroll_str, sizeof g->scroll_str, "%s.", g->text[g->exam_text[i]]); g->scroll_t = SCROLL_TICKS; return;
         }
     }
-    if (verb == 7) {                                                                  /* pull a lever / press a switch: sound $38, then its event-5 script */
+    if (verb == 7 || (verb == 6 && g->has_scroll)) {                                  /* use / pull a lever: event-5 script (a lever also clicks, sound $38) */
         int pid = r->objs[g->target].pid;
-        for (int i = 0; i < g->nvm; i++) if (g->vm_pid[i] == pid) { play_sound(g, 0x38); run_script(g, &r->objs[g->target], g->vm_code[i], g->vm_len[i]); return; }
+        { int ran = 0; for (int i = 0; i < g->nvm; i++) if (g->vm_pid[i] == pid) { if (!ran && verb == 7) play_sound(g, 0x38); ran = 1; run_script(g, &r->objs[g->target], g->vm_code[i], g->vm_len[i]); } if (ran) return; }
     }
     if (verb == 6 && g->has_scroll) {                                                 /* use: event 5 message scripts (inscriptions, switches) */
         int pid = r->objs[g->target].pid;
