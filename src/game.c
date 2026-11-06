@@ -214,6 +214,7 @@ static int neighbour(const Game *g, int wx, int wy, int horiz) {
    needs the key item with that id (inventory not implemented yet, so such doors stay shut). */
 static int wall_closed(const Game *g, const Wall *w) { return w->idx < MAX_WALLIDX ? g->wallflag[w->idx] != 0 : w->flags != 0; }
 
+static void say(Game *g, int text_id);
 /* Leaving the room through an exit wall; returns 1 if the room changed. */
 static int try_exit(Game *g, int dx, int dy) {
     Room *r = &g->rooms[g->cur]; Obj *h = &g->hero;
