@@ -8,6 +8,7 @@
 #define HERO_FX 7
 #define HERO_FY 7
 #define HERO_FZ 30
+#define ENERGY_MAX 100
 #define MAX_PUSH_DEPTH 0x1f
 #define WALK_TICKS_PER_FRAME 3   /* measured in the original: 6 video frames per walk frame */
 
@@ -34,7 +35,7 @@ struct Game {
     int cur;
     Obj hero;                         /* hero.slot = 8 */
     int facing, anim_t, moving;
-    uint8_t font[46 * 24], fontmap[32]; char **text; int ntext; int day;
+    uint8_t font[46 * 24], fontmap[32]; char **text; int ntext; int day; int energy;
     int has_icons; uint8_t icons[20 * 112]; uint16_t slotpos[8][4]; uint8_t verbtab[16];
     int target, nverbs, verbs[8], menu, sel, prev_joy, msg, msg_t, ninv, inv[64];     /* verb menu state */
     uint16_t wallflag[MAX_WALLIDX]; int bump_timer;    /* wall-record flags, shared by the two rooms a wall joins */
@@ -110,7 +111,7 @@ Game *game_load(const char *path) {
     fclose(f);
     g->target = -1; g->msg = -1;
     g->cur = g->start_room; g->hero.x += 1;                                /* level start nudges the hero +1 in x */
-    g->facing = JOY_RIGHT; g->day = 1;
+    g->facing = JOY_RIGHT; g->day = 1; g->energy = ENERGY_MAX;
     { const char *q = strstr(path, "level"); if (q && q[5] >= '1' && q[5] <= '9') g->day = q[5] - '0'; }   /* the day counter is the level number (level2.bin shows DAY 2) */
     return g;
 }
@@ -376,6 +377,20 @@ static void project(const Game *g, int org, int x, int y, int z, const int16_t *
     *py = bl + ol - (z - F[0] + F[2] + F[3] + F[4]);
 }
 
+/* Energy bar (HUD box x277..297, y143..147): colours sampled from the original; filled left to right, the rest is black. */
+static const uint32_t ENERGY_BAR[5][21] = {
+    {0x222222,0x662200,0x222222,0x884400,0x444422,0x884400,0x444422,0xaa6622,0x666666,0xaa6622,0x666666,0xcc8844,0x888888,0xcc8844,0x888888,0xeeaa44,0xaaaaaa,0xeeaa44,0xaaaaaa,0xeeaa44,0xaaaaaa},
+    {0x662200,0x222222,0x662200,0x444422,0x884400,0x444422,0x884400,0x666666,0xaa6622,0x666666,0xaa6622,0x888888,0xcc8844,0x888888,0xcc8844,0xaaaaaa,0xeeaa44,0xaaaaaa,0xeeaa44,0xaaaaaa,0xeeaa44},
+    {0x222222,0x662200,0x222222,0x884400,0x444422,0x884400,0x444422,0xaa6622,0x666666,0xaa6622,0x666666,0xcc8844,0x888888,0xcc8844,0x888888,0xeeaa44,0xaaaaaa,0xeeaa44,0xaaaaaa,0xeeaa44,0xaaaaaa},
+    {0x662200,0x222222,0x662200,0x444422,0x884400,0x444422,0x884400,0x666666,0xaa6622,0x666666,0xaa6622,0x888888,0xcc8844,0x888888,0xcc8844,0xaaaaaa,0xeeaa44,0xaaaaaa,0xeeaa44,0xaaaaaa,0xeeaa44},
+    {0x222222,0x662200,0x222222,0x884400,0x444422,0x884400,0x444422,0xaa6622,0x666666,0xaa6622,0x666666,0xcc8844,0x888888,0xcc8844,0x888888,0xeeaa44,0xaaaaaa,0xeeaa44,0xaaaaaa,0xeeaa44,0xaaaaaa}
+};
+static void draw_energy(const Game *g, uint32_t *fb) {
+    int n = (g->energy * 21 + ENERGY_MAX - 1) / ENERGY_MAX; if (g->energy <= 0) n = 0;
+    for (int y = 0; y < 5; y++) for (int x = 0; x < 21; x++) {
+        uint32_t c = x < n ? ENERGY_BAR[y][x] : 0; fb[(143 + y) * SCREEN_W + 277 + x] = (c >> 16 & 0xFF) | (c & 0xFF00) | (c & 0xFF) << 16 | 0xFF000000u;
+    }
+}
 static void blit(uint32_t *fb, const uint8_t *px, int w, int h, int x0, int y0) {
     for (int y = 0; y < h; y++) {
         int Y = y0 + y; if (Y < 0 || Y >= SCREEN_H) continue;
@@ -469,7 +484,7 @@ void game_render(const Game *g, uint32_t *fb) {
             blit(fb, fr->px, fr->w, fr->h, px + 2 + fr->hx, py + fr->hy);
         } else if (s->state == 1) blit(fb, s->px, s->w, s->h, px, py);
     }
-    if (g->hud) blit(fb, g->hud, SCREEN_W, SCREEN_H, 0, 0);     /* bottom panel frame over the room */
+    if (g->hud) { blit(fb, g->hud, SCREEN_W, SCREEN_H, 0, 0); }     /* bottom panel frame over the room */
     if (g->text) {
         char buf[96];
         snprintf(buf, sizeof buf, "%s %d", g->ntext > 29 ? g->text[29] : "DAY", g->day);
@@ -507,6 +522,7 @@ void game_render(const Game *g, uint32_t *fb) {
             }
         }   /* measured against the original: 3 px right of the nominal box */
     }
+    if (g->hud) draw_energy(g, fb);
 }
 
 /* Debug aid for the headless driver: put the hero somewhere. */
