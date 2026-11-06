@@ -38,7 +38,7 @@ struct Game {
     Obj hero;                         /* hero.slot = 8 */
     int facing, anim_t, moving;
     uint8_t font[46 * 24], fontmap[32]; char **text; int ntext; int day; int energy; int jump_t, jump_z0;
-    int has_scroll; uint8_t scroll_tiles[18 * 32], scroll_map[0x30], font5[46 * 20]; int nexam, nuse, ntake; uint16_t take_pid[512]; int16_t take_gold[512], take_xp[512]; uint16_t exam_pid[512], exam_text[512], use_pid[512], use_text[512];   /* examine scroll */
+    int has_scroll; uint8_t scroll_tiles[18 * 32], scroll_map[0x30], font5[46 * 20]; int nexam, nuse, ntake; uint16_t take_pid[512]; int16_t take_gold[512], take_xp[512]; int nvm; uint16_t vm_pid[256]; uint8_t vm_len[256], vm_code[256][255]; uint16_t exam_pid[512], exam_text[512], use_pid[512], use_text[512];   /* examine scroll */
     int scroll_t; char scroll_str[256]; long score; int map_open, map_px, map_py, status_open; long gold, xp, level; uint8_t visited[100];
     int has_icons; uint8_t icons[20 * 112]; uint16_t slotpos[8][4]; uint8_t verbtab[16];
     int target, nverbs, verbs[8], menu, sel, prev_joy, msg, msg_t, ninv, inv[64];     /* verb menu state */
@@ -118,6 +118,8 @@ Game *game_load(const char *path) {
         for (int i = 0; i < g->nexam; i++) { g->exam_pid[i] = (uint16_t)rd16(f); g->exam_text[i] = (uint16_t)rd16(f); }
         g->nuse = rd16(f); if (g->nuse < 0 || g->nuse > 512) g->nuse = 0;
         for (int i = 0; i < g->nuse; i++) { g->use_pid[i] = (uint16_t)rd16(f); g->use_text[i] = (uint16_t)rd16(f); }
+        g->nvm = rd16(f); if (g->nvm < 0 || g->nvm > 256) g->nvm = 0;
+        for (int i = 0; i < g->nvm; i++) { g->vm_pid[i] = (uint16_t)rd16(f); g->vm_len[i] = (uint8_t)rd8(f); rd(f, g->vm_code[i], g->vm_len[i]); }
         g->ntake = rd16(f); if (g->ntake < 0 || g->ntake > 512) g->ntake = 0;
         for (int i = 0; i < g->ntake; i++) { g->take_pid[i] = (uint16_t)rd16(f); g->take_gold[i] = (int16_t)rd16(f); g->take_xp[i] = (int16_t)rd16(f); }
         g->has_scroll = 1;
@@ -251,6 +253,43 @@ static int neighbour(const Game *g, int wx, int wy, int horiz) {
    needs the key item with that id (inventory not implemented yet, so such doors stay shut). */
 static int wall_closed(const Game *g, const Wall *w) { return w->idx < MAX_WALLIDX ? g->wallflag[w->idx] != 0 : w->flags != 0; }
 
+/* Event-5 world scripts (levers, switches), interpreted like the original dispatcher ($fab0/$fcca):
+   1e = test the object's state bit, 0e len .. 16 [0f len .. 16] = if/else on that test, 1b w word = set wall record flags,
+   0a w = unlock wall record (flags 0), 1f/20/21 = clear/set/toggle the object's state bit, 16/17 = end. Unknown ops stop the script. */
+static void run_script(Game *g, Obj *self, const uint8_t *c, int len) {
+    int state = 0, p = 0;
+    while (p < len) {
+        int op = c[p++];
+        switch (op) {
+        case 0x17: return;
+        case 0x16: break;
+        case 0x1e: state = (self->flags & 1) != 0; break;
+        case 0x0e: {
+            int l = c[p]; int pos = p;
+            if (state) {                                                  /* true: run the 'then' ops, skip the else part */
+                p++; state = 0;
+                /* the 'then' ops are executed by the main loop up to the 16; remember to skip the else block afterwards */
+                int q = p; int depth = 0; (void)depth;
+                while (q < len && c[q] != 0x16) q++;
+                run_script(g, self, c + p, q - p);
+                p = q + 1;
+                if (p < len && c[p] == 0x0f) { p++; p += c[p]; }
+            } else {                                                      /* false: jump to the else block */
+                p = pos + l;
+                if (p < len && c[p] == 0x0f) p += 2;
+            }
+            break; }
+        case 0x0f: return;
+        case 0x1b: { int w = c[p++]; int v = (c[p] << 8) | c[p + 1]; p += 2; if (w < MAX_WALLIDX) g->wallflag[w] = (uint16_t)v; break; }
+        case 0x0a: { int w = c[p++]; if (w < MAX_WALLIDX && g->wallflag[w]) { g->wallflag[w] = 0; play_sound(g, 0x12); } break; }
+        case 0x1f: self->flags &= ~1; break;
+        case 0x20: self->flags |= 1; break;
+        case 0x21: self->flags ^= 1; break;
+        default: return;
+        }
+    }
+}
+
 static void say(Game *g, int text_id);
 /* Leaving the room through an exit wall; returns 1 if the room changed. */
 static int try_exit(Game *g, int dx, int dy) {
@@ -333,6 +372,10 @@ static void exec_verb(Game *g, int verb) {
         for (int i = 0; i < g->nexam; i++) if (g->exam_pid[i] == pid && g->exam_text[i] < g->ntext && g->text[g->exam_text[i]][0]) {
             snprintf(g->scroll_str, sizeof g->scroll_str, "%s.", g->text[g->exam_text[i]]); g->scroll_t = SCROLL_TICKS; return;
         }
+    }
+    if (verb == 7) {                                                                  /* pull a lever / press a switch: sound $38, then its event-5 script */
+        int pid = r->objs[g->target].pid;
+        for (int i = 0; i < g->nvm; i++) if (g->vm_pid[i] == pid) { play_sound(g, 0x38); run_script(g, &r->objs[g->target], g->vm_code[i], g->vm_len[i]); return; }
     }
     if (verb == 6 && g->has_scroll) {                                                 /* use: event 5 message scripts (inscriptions, switches) */
         int pid = r->objs[g->target].pid;

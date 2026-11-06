@@ -156,6 +156,19 @@ for i in range(L.g6.n):
         p+=ln
 P('H',len(use))
 for pid,tx in use:P('HH',pid,tx)
+# event-5 world scripts (levers/switches): raw action bytes per placement id (blocks not starting with the message op $1c)
+vm=[]
+for i in range(L.g6.n):
+    e=L.g6.rec(i)
+    if len(e)<0x11 or not e[0x0b]:continue
+    p=0x10
+    for _ in range(e[0x0b]):
+        if p>=len(e) or not e[p]:break
+        ln=e[p]
+        if e[p+1]&0x7f==5 and e[p+2]!=0x1c:vm.append((i,bytes(e[p+2:p+ln])))
+        p+=ln
+P('H',len(vm))
+for pid,b in vm:P('HB',pid,len(b));o+=b
 # take scripts (event 0): op 6 vv = gold += vv and XP += vv>>2 (sound 3), op 5 vv = XP += vv (sound $1a), op 4 word = signed XP, op 2 = the take itself
 take=[]
 for i in range(L.g6.n):
