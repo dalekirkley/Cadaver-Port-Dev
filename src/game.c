@@ -38,7 +38,7 @@ struct Game {
     int facing, anim_t, moving;
     uint8_t font[46 * 24], fontmap[32]; char **text; int ntext; int day; int energy; int jump_t, jump_z0;
     int has_scroll; uint8_t scroll_tiles[18 * 32], scroll_map[0x30], font5[46 * 20]; int nexam, nuse; uint16_t exam_pid[512], exam_text[512], use_pid[512], use_text[512];   /* examine scroll */
-    int scroll_t; char scroll_str[256]; long score; int map_open, map_px, map_py; uint8_t visited[100];
+    int scroll_t; char scroll_str[256]; long score; int map_open, map_px, map_py, status_open; long gold, xp, level; uint8_t visited[100];
     int has_icons; uint8_t icons[20 * 112]; uint16_t slotpos[8][4]; uint8_t verbtab[16];
     int target, nverbs, verbs[8], menu, sel, prev_joy, msg, msg_t, ninv, inv[64];     /* verb menu state */
     uint16_t wallflag[MAX_WALLIDX]; int bump_timer;    /* wall-record flags, shared by the two rooms a wall joins */
@@ -122,7 +122,7 @@ Game *game_load(const char *path) {
     fclose(f);
     g->target = -1; g->msg = -1;
     g->cur = g->start_room; g->hero.x += 1;                                /* level start nudges the hero +1 in x */
-    g->facing = JOY_RIGHT; g->day = 1; g->energy = ENERGY_MAX;
+    g->facing = JOY_RIGHT; g->day = 1; g->energy = ENERGY_MAX; g->level = 1;
     { const char *q = strstr(path, "level"); if (q && q[5] >= '1' && q[5] <= '9') g->day = q[5] - '0'; }   /* the day counter is the level number (level2.bin shows DAY 2) */
     return g;
 }
@@ -299,6 +299,7 @@ static void exec_verb(Game *g, int verb) {
         memmove(&r->objs[g->target], &r->objs[g->target + 1], (size_t)(r->nobj - g->target - 1) * sizeof(Obj)); r->nobj--;
         g->target = -1; g->nverbs = 0; return;
     }
+    if (verb == 8 && g->spr[r->objs[g->target].slot].b16 == 7 && g->has_scroll) { g->status_open = 1; return; }     /* the diary: health, gold, XP, level, % complete */
     if (verb == 0xb && g->has_scroll) {                                               /* examine: the object's description on a parchment scroll */
         int pid = r->objs[g->target].pid;
         for (int i = 0; i < g->nexam; i++) if (g->exam_pid[i] == pid && g->exam_text[i] < g->ntext && g->text[g->exam_text[i]][0]) {
@@ -371,6 +372,7 @@ void game_tick(Game *g, int joy) {
     int fire_edge = (joy & JOY_FIRE) && !(g->prev_joy & JOY_FIRE), new_dirs = (joy & 15) & ~(g->prev_joy & 15);
     int prev = g->prev_joy; g->prev_joy = joy;
     g->visited[g->cur] = 1;
+    if (g->status_open) { if ((joy & 0xCF) && !(prev & 0xCF)) g->status_open = 0; return; }              /* diary panel: waits for a key ($9d68) */
     if ((joy & JOY_MAP) && !(prev & JOY_MAP) && g->has_scroll) { g->map_open ^= 1; g->map_px = g->map_py = 0; }     /* F1: map of the rooms entered so far */
     if (g->map_open) {                                                                          /* the game waits; the joystick pans the view (1 cell per tick), fire closes it ($a3e8..$a4dc) */
         g->map_px += ((joy & JOY_RIGHT) ? 1 : 0) - ((joy & JOY_LEFT) ? 1 : 0); g->map_py += ((joy & JOY_DOWN) ? 1 : 0) - ((joy & JOY_UP) ? 1 : 0);
@@ -527,6 +529,21 @@ static void draw_map(const Game *g, uint32_t *fb) {
     }
     char buf[64]; snprintf(buf, sizeof buf, "%s%d", g->ntext > 42 ? g->text[42] : "ROOMS ENTERED ", n); put5(g, fb, buf, 107, 116);
 }
+/* Diary panel ($9c7c): 6 lines of text 13 on the left, the values at x+0x42; the title comes from the gold table (only the first rank is known). */
+static void draw_status(const Game *g, uint32_t *fb) {
+    draw_panel(g, fb, 68, 10, 16, 4);
+    char line[16][48]; int nl = 0; const char *t = g->ntext > 13 ? g->text[13] : "";
+    for (const char *p = t; *p && nl < 16;) { int n = 0; while (p[n] && p[n] != '\n' && p[n] != '\r') n++; if (n > 47) n = 47; memcpy(line[nl], p, (size_t)n); line[nl][n] = 0; nl++; p += n; if (*p) p++; }
+    for (int i = 0; i < nl; i++) put5(g, fb, line[i], 78, 23 + 6 * i);
+    int rooms = 0, seen = 0; for (int i = 0; i < 100; i++) if (g->rooms[i].valid) { rooms++; seen += g->visited[i]; }
+    char b[48];
+    snprintf(b, sizeof b, "%d/%d", g->energy, ENERGY_MAX); put5(g, fb, b, 134, 23);
+    if (g->gold) { snprintf(b, sizeof b, "%ld", g->gold); put5(g, fb, b, 134, 29); }
+    if (g->xp) { snprintf(b, sizeof b, "%ld", g->xp); put5(g, fb, b, 134, 35); }
+    snprintf(b, sizeof b, "%ld", g->level); put5(g, fb, b, 134, 41);
+    snprintf(b, sizeof b, "%d%%", rooms ? seen * 100 / rooms : 0); put5(g, fb, b, 134, 47);
+    if (g->ntext > 63) put5(g, fb, g->text[63], 134, 53);
+}
 static void draw_scroll(const Game *g, uint32_t *fb) {
     const char *str = g->scroll_str; int len = (int)strlen(str);
     int maxw = 12, d0 = len - 48; if (d0 >= 0) { do { maxw++; d0 -= maxw; } while (d0 > 0); }        /* chars per line grows with the text */
@@ -644,6 +661,7 @@ void game_render(const Game *g, uint32_t *fb) {
     if (g->hud) draw_energy(g, fb);
     if (g->scroll_t > 0) draw_scroll(g, fb);
     if (g->map_open && g->has_scroll) draw_map(g, fb);
+    if (g->status_open && g->has_scroll) draw_status(g, fb);
 }
 
 /* Debug aid for the headless driver: put the hero somewhere. */
