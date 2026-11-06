@@ -14,6 +14,7 @@ static BITMAPINFO bmi;
 static uint32_t fb[SCREEN_W * SCREEN_H];
 static uint32_t bgra[SCREEN_W * SCREEN_H];
 static int running = 1;
+static int pending_level = 0;   /* F1..F5 = load data\\levelN.bin */
 #define AUDIO_RATE 22050
 #define ABUF 8
 #define ASAMPLES 441
@@ -47,7 +48,10 @@ static int read_joy(void) {
 static LRESULT CALLBACK wndproc(HWND h, UINT m, WPARAM w, LPARAM l) {
     switch (m) {
     case WM_DESTROY: running = 0; PostQuitMessage(0); return 0;
-    case WM_KEYDOWN: if (w == VK_ESCAPE) { running = 0; PostQuitMessage(0); } return 0;
+    case WM_KEYDOWN:
+        if (w == VK_ESCAPE) { running = 0; PostQuitMessage(0); }
+        if (w >= VK_F1 && w <= VK_F5) pending_level = (int)(w - VK_F1) + 1;
+        return 0;
     case WM_ERASEBKGND: return 1;
     case WM_PAINT: {
         PAINTSTRUCT ps; HDC dc = BeginPaint(h, &ps); RECT rc; GetClientRect(h, &rc);
@@ -77,6 +81,10 @@ int WINAPI WinMain(HINSTANCE hi, HINSTANCE hp, LPSTR cmd, int show) {
         int steps = 0;
         while (t >= next && steps < 5) { game_tick(g, read_joy()); next += tick; steps++; }
         if (steps > 4) next = t;
+        if (pending_level) {
+            char p[64]; snprintf(p, sizeof p, "data\\level%d.bin", pending_level); pending_level = 0;
+            Game *ng = game_load(p); if (ng) { game_free(g); g = ng; next = t; }
+        }
         audio_pump(g);
         game_render(g, fb);
         for (int i = 0; i < SCREEN_W * SCREEN_H; i++) { uint32_t v = fb[i]; bgra[i] = (v & 0xFF) << 16 | (v & 0xFF00) | (v >> 16 & 0xFF); }

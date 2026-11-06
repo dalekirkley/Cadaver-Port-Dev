@@ -33,7 +33,7 @@ struct Game {
     int cur;
     Obj hero;                         /* hero.slot = 8 */
     int facing, anim_t, moving;
-    unsigned tickno; int walk_ticks, walk_step;
+    unsigned tickno; int walk_ticks, walk_step, start_room;
     Sfx sfx[65]; Voice voice[4];
     uint8_t *hud;                      /* 320*200*4 bottom panel frame, or NULL */
 };
@@ -79,7 +79,7 @@ Game *game_load(const char *path) {
         for (int k = 0; k < no; k++) {
             Obj o; o.pid = rd16(f); o.x = rd8(f); o.y = rd8(f); o.z = rd8(f); o.flags = rd8(f); o.slot = rd16(f);
             if (o.flags & 0x80) continue;                    /* destroyed / not spawned */
-            if (o.slot == 8) { g->hero = o; continue; }       /* the player placement */
+            if (o.slot == 8) { g->hero = o; g->start_room = (int)n; continue; }       /* the player placement */
             r->objs[r->nobj++] = o;
         }
     }
@@ -90,7 +90,7 @@ Game *game_load(const char *path) {
       } }
     if (rd8(f) == 1) { g->hud = malloc(SCREEN_W * SCREEN_H * 4); if (!rd(f, g->hud, SCREEN_W * SCREEN_H * 4)) { free(g->hud); g->hud = NULL; } }
     fclose(f);
-    g->cur = 0; g->hero.x += 1;                                /* level start nudges the hero +1 in x */
+    g->cur = g->start_room; g->hero.x += 1;                                /* level start nudges the hero +1 in x */
     g->facing = JOY_RIGHT;
     return g;
 }
