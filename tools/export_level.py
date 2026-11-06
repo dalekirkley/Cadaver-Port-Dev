@@ -156,4 +156,26 @@ for i in range(L.g6.n):
         p+=ln
 P('H',len(use))
 for pid,tx in use:P('HH',pid,tx)
+# take scripts (event 0): op 6 vv = gold += vv and XP += vv>>2 (sound 3), op 5 vv = XP += vv (sound $1a), op 4 word = signed XP, op 2 = the take itself
+take=[]
+for i in range(L.g6.n):
+    e=L.g6.rec(i)
+    if len(e)<0x11 or not e[0x0b]:continue
+    p=0x10;gold=xp=0;got=False
+    for _ in range(e[0x0b]):
+        if p>=len(e) or not e[p]:break
+        ln=e[p]
+        if e[p+1]&0x7f==0:
+            q=p+2
+            while q<p+ln:
+                op=e[q]
+                if op==6:gold+=e[q+1];xp+=e[q+1]>>2;q+=2;got=True
+                elif op==5:xp+=e[q+1];q+=2;got=True
+                elif op==4:v=(e[q+1]<<8)|e[q+2];xp+=v-65536 if v>=32768 else v;q+=3;got=True
+                elif op==2:q+=1
+                else:break
+        p+=ln
+    if got:take.append((i,gold,xp))
+P('H',len(take))
+for pid,gd,xp in take:P('Hhh',pid,gd,xp)
 open(out,'wb').write(o);print(len(o),'bytes,',len(exam),'examine texts')
