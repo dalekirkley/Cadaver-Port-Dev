@@ -89,6 +89,7 @@ int WINAPI WinMain(HINSTANCE hi, HINSTANCE hp, LPSTR cmd, int show) {
         }
         audio_pump(g);
         game_render(g, fb);
+        { char dt[256]; SetWindowTextA(hw, game_debug_text(g, dt, sizeof dt) ? dt : "Cadaver (native)"); }
         for (int i = 0; i < SCREEN_W * SCREEN_H; i++) { uint32_t v = fb[i]; bgra[i] = (v & 0xFF) << 16 | (v & 0xFF00) | (v >> 16 & 0xFF); }
         InvalidateRect(hw, NULL, FALSE); UpdateWindow(hw);
         Sleep(5);

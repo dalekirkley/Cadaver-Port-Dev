@@ -767,13 +767,6 @@ void game_render(const Game *g, uint32_t *fb) {
             }
         }   /* measured against the original: 3 px right of the nominal box */
     }
-    if (g->dbg && g->has_scroll) {
-        char b[96];
-        snprintf(b, sizeof b, "NVM %d EXAM %d TAKE %d HID %d", g->nvm, g->nexam, g->ntake, g->nhid); put5(g, fb, b, 4, 4);
-        snprintf(b, sizeof b, "ROOM %d TARGET %d VERBS %d", g->cur, g->target, g->nverbs); put5(g, fb, b, 4, 11);
-        snprintf(b, sizeof b, "LAST VERB %d PID %d RAN %d", g->dbg_verb, g->dbg_pid, g->dbg_ran); put5(g, fb, b, 4, 18);
-        snprintf(b, sizeof b, "WALL51 %d HERO %d %d", g->wallflag[51], g->hero.x, g->hero.y); put5(g, fb, b, 4, 25);
-    }
     if (g->hud) draw_energy(g, fb);
     if (g->scroll_t > 0) draw_scroll(g, fb);
     if (g->map_open && g->has_scroll) draw_map(g, fb);
@@ -785,3 +778,11 @@ void game_warp(Game *g, int room, int x, int y, int z) { if (room >= 0 && room <
 
 /* Public hook for damage/healing sources (creatures, traps, food) as they get decoded. */
 void game_change_energy(Game *g, int delta) { change_energy(g, delta); }
+
+/* Debug text for the window title (F12): data counts, target, last verb, door state. Returns 0 when the overlay is off. */
+int game_debug_text(const Game *g, char *buf, int n) {
+    if (!g->dbg) return 0;
+    snprintf(buf, (size_t)n, "NVM %d EXAM %d TAKE %d HID %d | ROOM %d TARGET %d VERBS %d | LAST VERB %d PID %d RAN %d | WALL51 %d HERO %d,%d",
+             g->nvm, g->nexam, g->ntake, g->nhid, g->cur, g->target, g->nverbs, g->dbg_verb, g->dbg_pid, g->dbg_ran, g->wallflag[51], g->hero.x, g->hero.y);
+    return 1;
+}
