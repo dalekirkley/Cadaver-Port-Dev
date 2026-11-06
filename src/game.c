@@ -9,9 +9,10 @@
 #define HERO_FY 7
 #define HERO_FZ 30
 #define MAX_PUSH_DEPTH 0x1f
+#define WALK_TICKS_PER_FRAME 3   /* measured in the original: 6 video frames per walk frame */
 
 typedef struct { int len; int8_t *data; } Sfx;
-typedef struct { int sfx; double pos, step; int vol; } Voice;
+typedef struct { int sfx; double pos, step; int vol; double left; } Voice;   /* left = seconds before the voice is cut (0 = play to the end) */
 typedef struct { int state, w, h; int16_t f[5]; int push; int16_t fx, fy, fz; uint8_t *px; } Sprite;
 typedef struct { int16_t hx, hy; int w, h; uint8_t *px; } Frame;
 typedef struct { int x, y, z, slot, flags, pid; } Obj;       /* x,y = max corner, inclusive box */
@@ -32,7 +33,7 @@ struct Game {
     int cur;
     Obj hero;                         /* hero.slot = 8 */
     int facing, anim_t, moving;
-    unsigned tickno; int walk_ticks;
+    unsigned tickno; int walk_ticks, walk_step;
     Sfx sfx[65]; Voice voice[4];
 };
 
@@ -106,10 +107,10 @@ void game_hero(const Game *g, int *x, int *y, int *z) { *x = g->hero.x; *y = g->
 
 /* ---------------------------------------------------------------- sound */
 /* Original Paula clock: 3546895 / period = sample rate; volume is Paula's 0..64. */
-static void play_sound(Game *g, int id, int period, int vol) {
+static void play_sound(Game *g, int id, int period, int vol, double seconds) {
     if (id < 0 || id >= 65 || !g->sfx[id].len) return;
     int v = 0; for (int i = 0; i < 4; i++) if (!g->voice[i].step) { v = i; break; }
-    g->voice[v].sfx = id; g->voice[v].pos = 0; g->voice[v].step = 3546895.0 / period; g->voice[v].vol = vol;
+    g->voice[v].sfx = id; g->voice[v].pos = 0; g->voice[v].step = 3546895.0 / period; g->voice[v].vol = vol; g->voice[v].left = seconds;
 }
 
 void game_audio_mix(Game *g, int16_t *out, int n, int rate) {
@@ -120,6 +121,7 @@ void game_audio_mix(Game *g, int16_t *out, int n, int rate) {
             const Sfx *s = &g->sfx[vo->sfx]; int p = (int)vo->pos;
             if (p >= s->len) { vo->step = 0; continue; }
             acc += s->data[p] * vo->vol; vo->pos += vo->step / rate;
+            if (vo->left > 0 && (vo->left -= 1.0 / rate) <= 0) vo->step = 0;
         }
         acc = acc * 4; if (acc > 32767) acc = 32767; if (acc < -32768) acc = -32768;
         out[i] = (int16_t)acc;
@@ -208,10 +210,14 @@ void game_tick(Game *g, int joy) {
             if (out) try_exit(g, dx, dy);
         }
     }
-    /* Footstep (emulator trace of the original): sample record 22, period 320, volume 8, first heard 5 ticks into a
-       walk and then every 6 ticks. */
-    if (g->moving) { if (g->walk_ticks >= 4 && (g->walk_ticks - 4) % 6 == 0) play_sound(g, 22, 320, 8); g->walk_ticks++; }
-    else g->walk_ticks = 0;
+    /* Walking animation + footsteps, timed from an emulator trace of the original: each of the 4 walk frames is shown
+       for 3 logic ticks; a footstep (sample 22, period 320, volume 8, cut after 4 video frames = 80 ms) sounds when the
+       script reaches its 2nd and 4th frame (the `$fc 00` entries of the walk scripts). */
+    if (g->moving) {
+        int step = g->walk_ticks / WALK_TICKS_PER_FRAME;
+        if (g->walk_ticks % WALK_TICKS_PER_FRAME == 0 && (step & 1)) play_sound(g, 22, 320, 8, 0.08);
+        g->walk_step = step & 3; g->walk_ticks++;
+    } else g->walk_ticks = 0;
     g->anim_t++;
 }
 
@@ -253,7 +259,7 @@ static int hero_frame(const Game *g) {
     else if (f & JOY_LEFT) { a = walk_left; idle_frame = 21; }
     else if (f & JOY_DOWN) { a = walk_down; idle_frame = 26; }
     else { a = walk_up; idle_frame = 31; }
-    return g->moving ? a[(g->anim_t / 2) & 3] : idle_frame;
+    return g->moving ? a[g->walk_step] : idle_frame;
 }
 
 void game_render(const Game *g, uint32_t *fb) {
