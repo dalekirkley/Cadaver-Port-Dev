@@ -43,7 +43,7 @@ struct Game {
     int has_icons; uint8_t icons[20 * 112]; uint16_t slotpos[8][4]; uint8_t verbtab[16];
     int target, nverbs, verbs[8], menu, sel, prev_joy, msg, msg_t, ninv, inv[64];     /* verb menu state */
     uint16_t wallflag[MAX_WALLIDX]; int bump_timer;    /* wall-record flags, shared by the two rooms a wall joins */
-    unsigned tickno; int walk_ticks, walk_step, start_room;
+    unsigned tickno; int walk_ticks, walk_step, start_room; Obj start_hero;
     Sfx sfx[65]; Voice voice[4];
     uint8_t *hud;                      /* 320*200*4 bottom panel frame, or NULL */
 };
@@ -91,7 +91,7 @@ Game *game_load(const char *path) {
         for (int k = 0; k < no; k++) {
             Obj o; o.pid = rd16(f); o.x = rd8(f); o.y = rd8(f); o.z = rd8(f); o.flags = rd8(f); o.slot = rd16(f); o.xflags = rd8(f);
             if (o.flags & 0x80) continue;                    /* destroyed / not spawned */
-            if (o.slot == 8) { g->hero = o; g->start_room = (int)n; continue; }       /* the player placement */
+            if (o.slot == 8) { g->hero = o; g->start_hero = o; g->start_room = (int)n; continue; }       /* the player placement */
             r->objs[r->nobj++] = o;
         }
     }
@@ -124,7 +124,7 @@ Game *game_load(const char *path) {
     }
     fclose(f);
     g->target = -1; g->msg = -1;
-    g->cur = g->start_room; g->hero.x += 1;                                /* level start nudges the hero +1 in x */
+    g->cur = g->start_room; g->hero.x += 1; g->start_hero = g->hero;                                /* level start nudges the hero +1 in x */
     g->facing = JOY_RIGHT; g->day = 1; g->energy = ENERGY_MAX; g->level = 1;
     { const char *q = strstr(path, "level"); if (q && q[5] >= '1' && q[5] <= '9') g->day = q[5] - '0'; }   /* the day counter is the level number (level2.bin shows DAY 2) */
     return g;
@@ -174,6 +174,17 @@ void game_audio_mix(Game *g, int16_t *out, int n, int rate) {
         }
         acc = acc * 4; if (acc > 32767) acc = 32767; if (acc < -32768) acc = -32768;
         out[i] = (int16_t)acc;
+    }
+}
+
+/* Original $10836: add a signed amount to energy; heal plays sound $19, damage $1b; at zero the hero dies (sound $1c, $15) and the game restarts. */
+static void change_energy(Game *g, int delta) {
+    play_sound(g, delta < 0 ? 0x1b : 0x19);
+    g->energy += delta;
+    if (g->energy > ENERGY_MAX) g->energy = ENERGY_MAX;
+    if (g->energy <= 0) {
+        play_sound(g, 0x1c);
+        g->energy = ENERGY_MAX; g->hero = g->start_hero; g->cur = g->start_room; g->jump_t = 0;
     }
 }
 
@@ -683,3 +694,6 @@ void game_render(const Game *g, uint32_t *fb) {
 
 /* Debug aid for the headless driver: put the hero somewhere. */
 void game_warp(Game *g, int room, int x, int y, int z) { if (room >= 0 && room < 100 && g->rooms[room].valid) { g->cur = room; g->hero.x = x; g->hero.y = y; g->hero.z = z; } }
+
+/* Public hook for damage/healing sources (creatures, traps, food) as they get decoded. */
+void game_change_energy(Game *g, int delta) { change_energy(g, delta); }

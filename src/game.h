@@ -24,5 +24,6 @@ void game_render(const Game *g, uint32_t *rgba_out); /* 320x200, 0xAABBGGRR litt
 void game_audio_mix(Game *g, int16_t *out, int n, int rate);
 int game_room(const Game *g);
 void game_warp(Game *g, int room, int x, int y, int z);
+void game_change_energy(Game *g, int delta);
 void game_hero(const Game *g, int *x, int *y, int *z);
 #endif
