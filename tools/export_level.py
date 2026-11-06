@@ -84,6 +84,9 @@ for y in range(115,200):
         for x in xs:
             solid=cidx[y,x]!=0 or (nz and ((part==1 and x<max(nz)) or (part==2 and x>min(nz))))
             if solid:hud[y,x]=tuple(L.rgb[cidx[y,x]])+(255,)
+        if nz:   # the original keeps a black margin of about 10 px beyond the outline (nearest room pixel seen in its frames is 10 px away)
+            for x in (range(max(nz)+1,min(max(nz)+10,320)) if part==1 else range(max(0,min(nz)-9),min(nz))):
+                if hud[y,x,3]==0:hud[y,x]=(0,0,0,255)
 P('B',1);o+=hud.tobytes()
 # text: font (46 glyphs, 8x6, 4 plane-bytes per row), char->glyph table for 0x21..0x40, the level's strings and per-room name fields
 import lzhuf,textdec
