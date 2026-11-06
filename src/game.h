@@ -1,0 +1,24 @@
+/* Cadaver native - platform independent game core (no OS calls). */
+#ifndef CADAVER_GAME_H
+#define CADAVER_GAME_H
+#include <stdint.h>
+
+#define SCREEN_W 320
+#define SCREEN_H 200
+#define TICK_HZ 25              /* original logic rate */
+
+/* joystick bits as in the original ($8c3): */
+#define JOY_UP 1
+#define JOY_DOWN 2
+#define JOY_LEFT 4
+#define JOY_RIGHT 8
+#define JOY_FIRE 0x80
+
+typedef struct Game Game;
+Game *game_load(const char *path);          /* returns NULL on error */
+void game_free(Game *g);
+void game_tick(Game *g, int joy);            /* one 25 Hz logic step */
+void game_render(const Game *g, uint32_t *rgba_out); /* 320x200, 0xAABBGGRR little endian = R,G,B,A bytes */
+int game_room(const Game *g);
+void game_hero(const Game *g, int *x, int *y, int *z);
+#endif

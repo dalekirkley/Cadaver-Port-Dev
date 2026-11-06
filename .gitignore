@@ -1,0 +1,5 @@
+data/
+build/
+*.bin
+*.adf
+__pycache__/

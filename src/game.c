@@ -1,0 +1,242 @@
+#include "game.h"
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <math.h>
+
+#define MARGIN 6                 /* min-corner limit ($89b/$89c) */
+#define HERO_FX 7
+#define HERO_FY 7
+#define HERO_FZ 30
+#define MAX_PUSH_DEPTH 0x1f
+
+typedef struct { int state, w, h; int16_t f[5]; int push; int16_t fx, fy, fz; uint8_t *px; } Sprite;
+typedef struct { int16_t hx, hy; int w, h; uint8_t *px; } Frame;
+typedef struct { int x, y, z, slot, flags, pid; } Obj;       /* x,y = max corner, inclusive box */
+typedef struct { int x, y, orient; int box[4]; } Wall;
+typedef struct {
+    int valid, x0, y0, sx, sy, basez, org;
+    uint8_t *bg;                      /* 320*200*4 */
+    int nwalls; Wall *walls;
+    int nobj; Obj *objs;              /* live state, persists while the program runs */
+} Room;
+
+struct Game {
+    uint8_t pal[16][3];
+    int16_t sub[64][2];
+    Sprite spr[255];
+    int nframes; Frame *frames;
+    Room rooms[100];
+    int cur;
+    Obj hero;                         /* hero.slot = 8 */
+    int facing, anim_t, moving;
+    unsigned tickno;
+};
+
+/* ------------------------------------------------------------------ loading */
+static int rd(FILE *f, void *p, size_t n) { return fread(p, 1, n, f) == n; }
+static int rd8(FILE *f) { uint8_t v; return rd(f, &v, 1) ? v : -1; }
+static int rd16(FILE *f) { uint8_t b[2]; if (!rd(f, b, 2)) return 0; return b[0] | b[1] << 8; }
+static int rds16(FILE *f) { return (int16_t)rd16(f); }
+static uint32_t rd32(FILE *f) { uint8_t b[4]; if (!rd(f, b, 4)) return 0; return b[0] | b[1] << 8 | b[2] << 16 | (uint32_t)b[3] << 24; }
+
+Game *game_load(const char *path) {
+    FILE *f = fopen(path, "rb"); if (!f) return NULL;
+    char magic[4]; if (!rd(f, magic, 4) || memcmp(magic, "CADL", 4)) { fclose(f); return NULL; }
+    rd32(f);
+    Game *g = (Game *)calloc(1, sizeof *g);
+    rd(f, g->pal, 48);
+    for (int i = 0; i < 64; i++) { g->sub[i][0] = (int16_t)rds16(f); g->sub[i][1] = (int16_t)rds16(f); }
+    uint32_t ns = rd32(f);
+    for (uint32_t s = 0; s < ns && s < 255; s++) {
+        Sprite *sp = &g->spr[s]; sp->state = rd8(f);
+        if (!sp->state) continue;
+        for (int k = 0; k < 5; k++) sp->f[k] = (int16_t)rds16(f);
+        sp->push = rd8(f); sp->fx = rds16(f); sp->fy = rds16(f); sp->fz = rds16(f);
+        if (sp->state == 1) { sp->w = rd16(f); sp->h = rd16(f); sp->px = malloc((size_t)sp->w * sp->h * 4); rd(f, sp->px, (size_t)sp->w * sp->h * 4); }
+    }
+    g->nframes = rd32(f); g->frames = calloc(g->nframes, sizeof(Frame));
+    for (int n = 0; n < g->nframes; n++) {
+        Frame *fr = &g->frames[n]; fr->hx = rds16(f); fr->hy = rds16(f); fr->w = rd16(f); fr->h = rd16(f);
+        fr->px = malloc((size_t)fr->w * fr->h * 4); rd(f, fr->px, (size_t)fr->w * fr->h * 4);
+    }
+    uint32_t nr = rd32(f);
+    for (uint32_t n = 0; n < nr && n < 100; n++) {
+        Room *r = &g->rooms[n]; r->valid = rd8(f); if (!r->valid) continue;
+        r->x0 = rd8(f); r->y0 = rd8(f); r->sx = rd8(f); r->sy = rd8(f); r->basez = rd8(f); r->org = rd16(f);
+        r->bg = malloc(SCREEN_W * SCREEN_H * 4); rd(f, r->bg, SCREEN_W * SCREEN_H * 4);
+        r->nwalls = rd16(f); r->walls = calloc(r->nwalls ? r->nwalls : 1, sizeof(Wall));
+        for (int k = 0; k < r->nwalls; k++) {
+            Wall *w = &r->walls[k]; w->x = rds16(f); w->y = rds16(f); w->orient = rd8(f);
+            for (int b = 0; b < 4; b++) w->box[b] = rds16(f);
+        }
+        int no = rd16(f); r->objs = calloc(no ? no : 1, sizeof(Obj)); r->nobj = 0;
+        for (int k = 0; k < no; k++) {
+            Obj o; o.pid = rd16(f); o.x = rd8(f); o.y = rd8(f); o.z = rd8(f); o.flags = rd8(f); o.slot = rd16(f);
+            if (o.flags & 0x80) continue;                    /* destroyed / not spawned */
+            if (o.slot == 8) { g->hero = o; continue; }       /* the player placement */
+            r->objs[r->nobj++] = o;
+        }
+    }
+    fclose(f);
+    g->cur = 0; g->hero.x += 1;                                /* level start nudges the hero +1 in x */
+    g->facing = JOY_RIGHT;
+    return g;
+}
+
+void game_free(Game *g) {
+    if (!g) return;
+    for (int s = 0; s < 255; s++) free(g->spr[s].px);
+    for (int n = 0; n < g->nframes; n++) free(g->frames[n].px);
+    for (int n = 0; n < 100; n++) { free(g->rooms[n].bg); free(g->rooms[n].walls); free(g->rooms[n].objs); }
+    free(g->frames); free(g);
+}
+
+int game_room(const Game *g) { return g->cur; }
+void game_hero(const Game *g, int *x, int *y, int *z) { *x = g->hero.x; *y = g->hero.y; *z = g->hero.z; }
+
+/* ---------------------------------------------------------------- collision */
+typedef struct { int x0, y0, x1, y1, z0, z1; } Box;
+static Box box_of(const Game *g, const Obj *o) {
+    const Sprite *s = &g->spr[o->slot]; int fx = s->fx, fy = s->fy, fz = s->fz;
+    if (o->slot == 8) { fx = HERO_FX; fy = HERO_FY; fz = HERO_FZ; }
+    Box b = { o->x - fx + 1, o->y - fy + 1, o->x, o->y, o->z, o->z + fz - 1 };
+    return b;
+}
+static int overlap(Box a, Box b) {
+    return !(a.x1 < b.x0 || b.x1 < a.x0 || a.y1 < b.y0 || b.y1 < a.y0 || a.z1 < b.z0 || b.z1 < a.z0);
+}
+static int pushable(const Game *g, const Obj *o) { return o->slot != 8 && g->spr[o->slot].push != 0; }
+
+/* Try to move o by (dx,dy); every overlapping object must itself be pushable and movable. */
+static int try_move(Game *g, Room *r, Obj *o, int dx, int dy, int depth) {
+    int nx = o->x + dx, ny = o->y + dy;
+    Box self = box_of(g, o); int fx = self.x1 - self.x0 + 1, fy = self.y1 - self.y0 + 1;
+    if (nx >= r->sx * 8 || ny >= r->sy * 8 || nx - fx + 1 < MARGIN || ny - fy + 1 < MARGIN || depth > MAX_PUSH_DEPTH) return 0;
+    Obj ghost = *o; ghost.x = nx; ghost.y = ny; Box gb = box_of(g, &ghost);
+    Obj *hits[64]; int nh = 0;
+    for (int i = 0; i < r->nobj && nh < 64; i++) { Obj *q = &r->objs[i]; if (q == o) continue; if (overlap(gb, box_of(g, q))) hits[nh++] = q; }
+    if (o != &g->hero && overlap(gb, box_of(g, &g->hero))) return 0;     /* pushed objects stop at the hero */
+    for (int i = 0; i < nh; i++) if (!pushable(g, hits[i])) return 0;
+    int sx[64], sy[64];
+    for (int i = 0; i < nh; i++) {
+        sx[i] = hits[i]->x; sy[i] = hits[i]->y;
+        if (!try_move(g, r, hits[i], dx, dy, depth + 1)) {
+            for (int k = 0; k < i; k++) { hits[k]->x = sx[k]; hits[k]->y = sy[k]; }
+            return 0;
+        }
+    }
+    o->x = nx; o->y = ny; return 1;
+}
+
+static int neighbour(const Game *g, int wx, int wy) {
+    for (int n = 0; n < 100; n++) {
+        const Room *r = &g->rooms[n]; if (!r->valid || n == g->cur) continue;
+        if (r->x0 <= wx && wx < r->x0 + r->sx && r->y0 - 1 <= wy && wy <= r->y0 + r->sy) return n;
+    }
+    return -1;
+}
+
+/* Leaving the room through an exit wall; returns 1 if the room changed. */
+static int try_exit(Game *g, int dx, int dy) {
+    Room *r = &g->rooms[g->cur]; Obj *h = &g->hero;
+    int nx = h->x + dx, ny = h->y + dy;
+    for (int k = 0; k < r->nwalls; k++) {
+        Wall *w = &r->walls[k];
+        if (dy != 0) { if (!(w->box[0] <= nx - HERO_FX + 1 && nx <= w->box[2])) continue; }
+        else         { if (!(w->box[1] <= ny - HERO_FY + 1 && ny <= w->box[3])) continue; }
+        int n = neighbour(g, w->x, w->y); if (n < 0) continue;
+        Room *nr = &g->rooms[n]; int x, y;
+        if (w->orient != 0) {
+            x = (w->x + 1 - nr->x0) * 8 + 4;
+            y = (((ny - MARGIN) & ~7) == 0) ? nr->sy * 8 - 1 : MARGIN + HERO_FY;
+        } else {
+            y = (w->y + 1 - nr->y0) * 8 + 4;
+            x = (((nx - MARGIN) & ~7) == 0) ? nr->sx * 8 - 1 : MARGIN + HERO_FX;
+        }
+        h->z = (((h->z >> 4) + r->basez - nr->basez) << 4) | (h->z & 15);
+        h->x = x; h->y = y; g->cur = n; return 1;
+    }
+    return 0;
+}
+
+/* Walking animation scripts (frame bank indices), from the original tables at $562e/$5694. */
+static const int walk_up[4] = {12, 13, 14, 15}, walk_down[4] = {11, 10, 9, 8}, walk_left[4] = {7, 6, 5, 4}, walk_right[4] = {0, 1, 2, 3};
+
+void game_tick(Game *g, int joy) {
+    Room *r = &g->rooms[g->cur]; Obj *h = &g->hero;
+    int dx = ((joy & JOY_RIGHT) ? 1 : 0) - ((joy & JOY_LEFT) ? 1 : 0);
+    int dy = ((joy & JOY_DOWN) ? 1 : 0) - ((joy & JOY_UP) ? 1 : 0);
+    g->tickno++;
+    g->moving = 0;
+    if (dx || dy) {
+        g->facing = joy & 15; g->moving = 1;
+        if (!try_move(g, r, h, dx, dy, 0)) {
+            int nx = h->x + dx, ny = h->y + dy;
+            int out = nx >= r->sx * 8 || ny >= r->sy * 8 || nx - HERO_FX + 1 < MARGIN || ny - HERO_FY + 1 < MARGIN;
+            if (out) try_exit(g, dx, dy);
+        }
+    }
+    g->anim_t++;
+}
+
+/* ---------------------------------------------------------------- rendering */
+static void project(const Game *g, int org, int x, int y, int z, const int16_t *F, int *px, int *py) {
+    int ci = x >> 3, cj = y >> 3, xs = x & 7, ys = y & 7;
+    int base = org + 322 * ci + 318 * cj;
+    int bl = base / 40, bb = base % 40; if (bb < 0) { bb += 40; bl--; }
+    int off = g->sub[ys * 8 + xs][0], sh = g->sub[ys * 8 + xs][1];
+    int ol = (int)lrint((double)off / 40.0), ob = off - 40 * ol;
+    *px = (bb + ob) * 8 + sh - 16 * (F[1] - 1);
+    *py = bl + ol - (z - F[0] + F[2] + F[3] + F[4]);
+}
+
+static void blit(uint32_t *fb, const uint8_t *px, int w, int h, int x0, int y0) {
+    for (int y = 0; y < h; y++) {
+        int Y = y0 + y; if (Y < 0 || Y >= SCREEN_H) continue;
+        for (int x = 0; x < w; x++) {
+            int X = x0 + x; if (X < 0 || X >= SCREEN_W) continue;
+            const uint8_t *p = px + ((size_t)y * w + x) * 4;
+            if (p[3]) fb[Y * SCREEN_W + X] = p[0] | p[1] << 8 | p[2] << 16 | 0xFF000000u;
+        }
+    }
+}
+
+typedef struct { int key, x, y, z, slot; int hero; } DrawItem;
+static int cmp_item(const void *a, const void *b) {
+    const DrawItem *p = a, *q = b;
+    if (p->key != q->key) return p->key - q->key;
+    if (p->x != q->x) return p->x - q->x;
+    if (p->y != q->y) return p->y - q->y;
+    return p->z - q->z;
+}
+
+static int hero_frame(const Game *g) {
+    int f = g->facing;
+    const int *a; int idle_frame;
+    if (f & JOY_RIGHT) { a = walk_right; idle_frame = 16; }
+    else if (f & JOY_LEFT) { a = walk_left; idle_frame = 21; }
+    else if (f & JOY_DOWN) { a = walk_down; idle_frame = 26; }
+    else { a = walk_up; idle_frame = 31; }
+    return g->moving ? a[(g->anim_t / 1) & 3] : idle_frame;
+}
+
+void game_render(const Game *g, uint32_t *fb) {
+    const Room *r = &g->rooms[g->cur];
+    memcpy(fb, r->bg, SCREEN_W * SCREEN_H * 4);
+    DrawItem items[256]; int n = 0;
+    for (int i = 0; i < r->nobj && n < 255; i++) {
+        const Obj *o = &r->objs[i];
+        items[n++] = (DrawItem){ o->x + o->y, o->x, o->y, o->z, o->slot, 0 };
+    }
+    items[n++] = (DrawItem){ g->hero.x + g->hero.y, g->hero.x, g->hero.y, g->hero.z, 8, 1 };
+    qsort(items, n, sizeof items[0], cmp_item);
+    for (int i = 0; i < n; i++) {
+        const DrawItem *d = &items[i]; const Sprite *s = &g->spr[d->slot];
+        int px, py; project(g, r->org, d->x, d->y, d->z, s->f, &px, &py);
+        if (d->hero) {
+            const Frame *fr = &g->frames[hero_frame(g) % g->nframes];
+            blit(fb, fr->px, fr->w, fr->h, px + 2 + fr->hx, py + fr->hy);
+        } else if (s->state == 1) blit(fb, s->px, s->w, s->h, px, py);
+    }
+}
