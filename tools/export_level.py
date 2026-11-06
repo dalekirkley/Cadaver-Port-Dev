@@ -191,4 +191,9 @@ for i in range(L.g6.n):
     if got:take.append((i,gold,xp))
 P('H',len(take))
 for pid,gd,xp in take:P('Hhh',pid,gd,xp)
+# alternate image (frame 1) for levers (switch verb 7): shown while the object's state bit is set
+alt=[s for s in range(255) if L.g2.rec(s) and len(L.g2.rec(s))>0x24 and L.g2.rec(s)[0x16+1]==4 and L.sprite(s,1) is not None]
+P('H',len(alt))
+for s in alt:
+    im=L.sprite(s,1);P('B',s);P('HH',im.width,im.height);o+=im.tobytes()
 open(out,'wb').write(o);print(len(o),'bytes,',len(exam),'examine texts')

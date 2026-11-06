@@ -16,7 +16,7 @@
 
 typedef struct { int len; int8_t *data; } Sfx;
 typedef struct { int sfx; double pos, step; int vol; double left; } Voice;   /* left = seconds before the voice is cut (0 = play to the end) */
-typedef struct { int state, w, h; int16_t f[5]; int push; int16_t fx, fy, fz, name; uint8_t c, b16, b17, b1d; uint8_t *px; } Sprite;
+typedef struct { int state, w, h; int16_t f[5]; int push; int16_t fx, fy, fz, name; uint8_t c, b16, b17, b1d; uint8_t *px; int aw, ah; uint8_t *apx; } Sprite;
 typedef struct { int16_t hx, hy; int w, h; uint8_t *px; } Frame;
 typedef struct { int x, y, z, slot, flags, pid, xflags; } Obj;       /* x,y = max corner, inclusive box */
 typedef struct { int x, y, orient; int box[4]; int slot, z, wx, wy; int idx, flags, b7; } Wall;
@@ -122,6 +122,8 @@ Game *game_load(const char *path) {
         for (int i = 0; i < g->nvm; i++) { g->vm_pid[i] = (uint16_t)rd16(f); g->vm_len[i] = (uint8_t)rd8(f); rd(f, g->vm_code[i], g->vm_len[i]); }
         g->ntake = rd16(f); if (g->ntake < 0 || g->ntake > 512) g->ntake = 0;
         for (int i = 0; i < g->ntake; i++) { g->take_pid[i] = (uint16_t)rd16(f); g->take_gold[i] = (int16_t)rd16(f); g->take_xp[i] = (int16_t)rd16(f); }
+        { int na = rd16(f); if (na < 0 || na > 255) na = 0;          /* second sprite image (lever pulled) */
+          for (int i = 0; i < na; i++) { int sl = rd8(f); Sprite *sp = &g->spr[sl]; sp->aw = rd16(f); sp->ah = rd16(f); sp->apx = malloc((size_t)sp->aw * sp->ah * 4); rd(f, sp->apx, (size_t)sp->aw * sp->ah * 4); } }
         g->has_scroll = 1;
     }
     fclose(f);
@@ -134,7 +136,7 @@ Game *game_load(const char *path) {
 
 void game_free(Game *g) {
     if (!g) return;
-    for (int s = 0; s < 255; s++) free(g->spr[s].px);
+    for (int s = 0; s < 255; s++) { free(g->spr[s].px); free(g->spr[s].apx); }
     for (int n = 0; n < g->nframes; n++) free(g->frames[n].px);
     for (int n = 0; n < 100; n++) { free(g->rooms[n].bg); free(g->rooms[n].walls); free(g->rooms[n].objs); }
     free(g->hud);
@@ -520,7 +522,7 @@ static void blit(uint32_t *fb, const uint8_t *px, int w, int h, int x0, int y0) 
     }
 }
 
-typedef struct { int key, x, y, z, slot; int hero; Box b; int solid; } DrawItem;
+typedef struct { int key, x, y, z, slot; int hero; Box b; int solid; int alt; } DrawItem;
 static int cmp_item(const void *a, const void *b) {
     const DrawItem *p = a, *q = b;
     if (p->key != q->key) return p->key - q->key;
@@ -653,7 +655,7 @@ void game_render(const Game *g, uint32_t *fb) {
     DrawItem items[256]; int n = 0;
     for (int i = 0; i < r->nobj && n < 255; i++) {
         const Obj *o = &r->objs[i];
-        items[n++] = (DrawItem){ flat(g, o) ? -1000 : o->x + o->y, o->x, o->y, o->z, o->slot, 0, box_of(g, o), !flat(g, o) };
+        items[n++] = (DrawItem){ flat(g, o) ? -1000 : o->x + o->y, o->x, o->y, o->z, o->slot, 0, box_of(g, o), !flat(g, o), (o->flags & 1) && g->spr[o->slot].apx != NULL };
     }
     for (int i = 0; i < r->nwalls && n < 255; i++) {
         const Wall *w = &r->walls[i]; const Sprite *s = &g->spr[w->slot];
@@ -689,7 +691,8 @@ void game_render(const Game *g, uint32_t *fb) {
         if (d->hero) {
             const Frame *fr = &g->frames[hero_frame(g) % g->nframes];
             blit(fb, fr->px, fr->w, fr->h, px + 2 + fr->hx, py + fr->hy);
-        } else if (s->state == 1) blit(fb, s->px, s->w, s->h, px, py);
+        } else if (d->alt) blit(fb, s->apx, s->aw, s->ah, px, py);
+        else if (s->state == 1) blit(fb, s->px, s->w, s->h, px, py);
     }
     if (g->hud) { blit(fb, g->hud, SCREEN_W, SCREEN_H, 0, 0); }     /* bottom panel frame over the room */
     if (g->text) {
