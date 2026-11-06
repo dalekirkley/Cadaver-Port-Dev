@@ -35,6 +35,7 @@ struct Game {
     int facing, anim_t, moving;
     unsigned tickno; int walk_ticks, walk_step;
     Sfx sfx[65]; Voice voice[4];
+    uint8_t *hud;                      /* 320*200*4 bottom panel frame, or NULL */
 };
 
 /* ------------------------------------------------------------------ loading */
@@ -87,6 +88,7 @@ Game *game_load(const char *path) {
           g->sfx[i].len = (int)rd32(f); g->sfx[i].data = malloc(g->sfx[i].len ? g->sfx[i].len : 1);
           rd(f, g->sfx[i].data, g->sfx[i].len);
       } }
+    if (rd8(f) == 1) { g->hud = malloc(SCREEN_W * SCREEN_H * 4); if (!rd(f, g->hud, SCREEN_W * SCREEN_H * 4)) { free(g->hud); g->hud = NULL; } }
     fclose(f);
     g->cur = 0; g->hero.x += 1;                                /* level start nudges the hero +1 in x */
     g->facing = JOY_RIGHT;
@@ -98,6 +100,7 @@ void game_free(Game *g) {
     for (int s = 0; s < 255; s++) free(g->spr[s].px);
     for (int n = 0; n < g->nframes; n++) free(g->frames[n].px);
     for (int n = 0; n < 100; n++) { free(g->rooms[n].bg); free(g->rooms[n].walls); free(g->rooms[n].objs); }
+    free(g->hud);
     for (int i = 0; i < 65; i++) free(g->sfx[i].data);
     free(g->frames); free(g);
 }
@@ -280,4 +283,5 @@ void game_render(const Game *g, uint32_t *fb) {
             blit(fb, fr->px, fr->w, fr->h, px + 2 + fr->hx, py + fr->hy);
         } else if (s->state == 1) blit(fb, s->px, s->w, s->h, px, py);
     }
+    if (g->hud) blit(fb, g->hud, SCREEN_W, SCREEN_H, 0, 0);     /* bottom panel frame over the room */
 }

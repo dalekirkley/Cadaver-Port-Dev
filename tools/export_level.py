@@ -49,4 +49,17 @@ for i in range(65):
     a=0x3763c-0xb8+14*i
     ln,ad=struct.unpack('>HI',L.game[a+4:a+10]);data=L.game[ad-0xb8:ad-0xb8+ln*2]
     P('I',len(data));o+=bytes(data)
+# HUD frame (bottom panel), stored in the game image as per-row left and right strips of n(y) words each
+# (n grows by one every 8 rows as the diagonal edges close in); word-interleaved 4-plane, colour 0 = black (opaque).
+hud=np.zeros((200,320,4),np.uint8);off=0x4c5b2-0x4bd48-0xb8
+for y in range(115,200):
+    n=7+(y-163)//8
+    if n<1:continue
+    for part in (0,1):
+        for wd in range(n):
+            ws=[int.from_bytes(L.game[off+2*k:off+2*k+2],'big') for k in range(4)];off+=8
+            x0=(wd if part==0 else 20-n+wd)*16
+            for b in range(16):
+                c=sum(((ws[k]>>(15-b))&1)<<k for k in range(4));hud[y,x0+b]=tuple(L.rgb[c])+(255,)
+P('B',1);o+=hud.tobytes()
 open(out,'wb').write(o);print(len(o),'bytes')
