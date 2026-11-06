@@ -39,7 +39,7 @@ for n in range(100):
     P('B',1);P('5B',r['x0'],r['y0'],r['sx'],r['sy'],r['raw'][0x1e]);P('H',L.origin(r['sx'],r['sy']))
     bg=L.render_room(n,objects=False);o+=bg.tobytes()
     W=wall_boxes(L,r);P('H',len(W))
-    for w in W:P('hhB4hHBhh',w['x'],w['y'],w['orient'],*w['box'],w['slot'],w['z'],w['wx'],w['wy'])
+    for w in W:P('hhB4hHBhhHHB',w['x'],w['y'],w['orient'],*w['box'],w['slot'],w['z'],w['wx'],w['wy'],w['idx'],w['flags'],w['b7'])
     lst=L.g5.rec(n);ids=[u16(lst,k) for k in range(0,len(lst),2)];P('H',len(ids))
     for pid in ids:
         p=L.g6.rec(pid);P('HBBBBH',pid,p[0],p[1],p[2],p[3],u16(p,6))

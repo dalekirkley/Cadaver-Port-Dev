@@ -16,7 +16,7 @@ typedef struct { int sfx; double pos, step; int vol; double left; } Voice;   /* 
 typedef struct { int state, w, h; int16_t f[5]; int push; int16_t fx, fy, fz; uint8_t *px; } Sprite;
 typedef struct { int16_t hx, hy; int w, h; uint8_t *px; } Frame;
 typedef struct { int x, y, z, slot, flags, pid; } Obj;       /* x,y = max corner, inclusive box */
-typedef struct { int x, y, orient; int box[4]; int slot, z, wx, wy; int open; } Wall;
+typedef struct { int x, y, orient; int box[4]; int slot, z, wx, wy; int idx, flags, b7; } Wall;
 typedef struct {
     int valid, x0, y0, sx, sy, basez, org;
     uint8_t *bg;                      /* 320*200*4 */
@@ -24,6 +24,7 @@ typedef struct {
     int nobj; Obj *objs;              /* live state, persists while the program runs */
 } Room;
 
+#define MAX_WALLIDX 4096
 struct Game {
     uint8_t pal[16][3];
     int16_t sub[64][2];
@@ -33,6 +34,7 @@ struct Game {
     int cur;
     Obj hero;                         /* hero.slot = 8 */
     int facing, anim_t, moving;
+    uint16_t wallflag[MAX_WALLIDX]; int bump_timer;    /* wall-record flags, shared by the two rooms a wall joins */
     unsigned tickno; int walk_ticks, walk_step, start_room;
     Sfx sfx[65]; Voice voice[4];
     uint8_t *hud;                      /* 320*200*4 bottom panel frame, or NULL */
@@ -75,6 +77,7 @@ Game *game_load(const char *path) {
             Wall *w = &r->walls[k]; w->x = rds16(f); w->y = rds16(f); w->orient = rd8(f);
             for (int b = 0; b < 4; b++) w->box[b] = rds16(f);
             w->slot = rd16(f); w->z = rd8(f); w->wx = rds16(f); w->wy = rds16(f);
+            w->idx = rd16(f); w->flags = rd16(f); w->b7 = rd8(f); if (w->idx < MAX_WALLIDX) g->wallflag[w->idx] = (uint16_t)w->flags;
         }
         int no = rd16(f); r->objs = calloc(no ? no : 1, sizeof(Obj)); r->nobj = 0;
         for (int k = 0; k < no; k++) {
@@ -176,6 +179,10 @@ static int neighbour(const Game *g, int wx, int wy, int horiz) {
     return -1;
 }
 
+/* Wall record flags word (original $6e2c): 0 = open passage, 0xffff = permanently blocked, anything else = locked,
+   needs the key item with that id (inventory not implemented yet, so such doors stay shut). */
+static int wall_closed(const Game *g, const Wall *w) { return w->idx < MAX_WALLIDX ? g->wallflag[w->idx] != 0 : w->flags != 0; }
+
 /* Leaving the room through an exit wall; returns 1 if the room changed. */
 static int try_exit(Game *g, int dx, int dy) {
     Room *r = &g->rooms[g->cur]; Obj *h = &g->hero;
@@ -191,6 +198,10 @@ static int try_exit(Game *g, int dx, int dy) {
         if (dy != 0) { if (!(w->box[0] <= nx - HERO_FX + 1 && nx <= w->box[2])) continue; }
         else         { if (!(w->box[1] <= ny - HERO_FY + 1 && ny <= w->box[3])) continue; }
         int n = neighbour(g, w->x, w->y, w->orient != 0); if (n < 0) continue;
+        if (wall_closed(g, w)) {                                  /* shut door: bump, with a sound at most every 32 ticks ($9be counter) */
+            if (g->bump_timer <= 0) { play_sound(g, 60, 428, 24, 0.5); g->bump_timer = 32; }
+            return 0;
+        }
         Room *nr = &g->rooms[n]; int x, y;
         if (w->orient != 0) {
             x = (w->x + 1 - nr->x0) * 8 + 4;
@@ -231,12 +242,7 @@ void game_tick(Game *g, int joy) {
         g->walk_step = step & 3; g->walk_ticks++;
     } else g->walk_ticks = 0;
     g->anim_t++;
-    /* Doors: a stand-in for the original behaviour (not yet decoded) - the door slides away while the hero is near it. */
-    for (int k = 0; k < r->nwalls; k++) {
-        Wall *w = &r->walls[k]; const Sprite *s = &g->spr[w->slot];
-        if (!(s->state == 1 && s->h > 1)) continue;
-        w->open = (h->x >= w->box[0] - 8 && h->x - HERO_FX + 1 <= w->box[2] + 8 && h->y >= w->box[1] - 8 && h->y - HERO_FY + 1 <= w->box[3] + 8);
-    }
+    if (g->bump_timer > 0) g->bump_timer--;
 }
 
 /* ---------------------------------------------------------------- rendering */
@@ -290,7 +296,7 @@ void game_render(const Game *g, uint32_t *fb) {
     }
     for (int i = 0; i < r->nwalls && n < 255; i++) {
         const Wall *w = &r->walls[i]; const Sprite *s = &g->spr[w->slot];
-        if (s->state == 1 && s->h > 1 && !w->open) items[n++] = (DrawItem){ w->wx + s->fx + w->wy + s->fy - 2, w->wx + s->fx - 1, w->wy + s->fy - 1, (w->z - r->basez) * 16, w->slot, 0 };
+        if (s->state == 1 && s->h > 1 && wall_closed(g, w)) items[n++] = (DrawItem){ w->wx + s->fx + w->wy + s->fy - 2, w->wx + s->fx - 1, w->wy + s->fy - 1, (w->z - r->basez) * 16, w->slot, 0 };
     }
     items[n++] = (DrawItem){ g->hero.x + g->hero.y, g->hero.x, g->hero.y, g->hero.z, 8, 1 };
     qsort(items, n, sizeof items[0], cmp_item);

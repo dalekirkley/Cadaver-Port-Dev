@@ -102,5 +102,5 @@ def wall_boxes(L,r):
         mnx,mny=rx*8,ry*8;X,Y=mnx,mny
         if fx==8:mny-=4;Y+=4
         if fy==8:mnx-=4;X+=4
-        out.append(dict(idx=w,x=x,y=y,orient=orient,box=(mnx,mny,X+fx-1,Y+fy-1),slot=d3*4+d2,z=a[6],wx=rx*8,wy=ry*8))
+        out.append(dict(idx=w,x=x,y=y,orient=orient,box=(mnx,mny,X+fx-1,Y+fy-1),slot=d3*4+d2,z=a[6],flags=(a[2]<<8)|a[3],b7=a[7],wx=rx*8,wy=ry*8))
     return out
