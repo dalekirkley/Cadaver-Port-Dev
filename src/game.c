@@ -386,7 +386,7 @@ static void blit(uint32_t *fb, const uint8_t *px, int w, int h, int x0, int y0) 
     }
 }
 
-typedef struct { int key, x, y, z, slot; int hero; } DrawItem;
+typedef struct { int key, x, y, z, slot; int hero; Box b; int solid; } DrawItem;
 static int cmp_item(const void *a, const void *b) {
     const DrawItem *p = a, *q = b;
     if (p->key != q->key) return p->key - q->key;
@@ -430,14 +430,36 @@ void game_render(const Game *g, uint32_t *fb) {
     DrawItem items[256]; int n = 0;
     for (int i = 0; i < r->nobj && n < 255; i++) {
         const Obj *o = &r->objs[i];
-        items[n++] = (DrawItem){ flat(g, o) ? -1000 : o->x + o->y, o->x, o->y, o->z, o->slot, 0 };
+        items[n++] = (DrawItem){ flat(g, o) ? -1000 : o->x + o->y, o->x, o->y, o->z, o->slot, 0, box_of(g, o), !flat(g, o) };
     }
     for (int i = 0; i < r->nwalls && n < 255; i++) {
         const Wall *w = &r->walls[i]; const Sprite *s = &g->spr[w->slot];
-        if (s->state == 1 && s->h > 1 && wall_closed(g, w)) items[n++] = (DrawItem){ w->wx + s->fx + w->wy + s->fy - 2, w->wx + s->fx - 1, w->wy + s->fy - 1, (w->z - r->basez) * 16, w->slot, 0 };
+        if (s->state == 1 && s->h > 1 && wall_closed(g, w)) items[n++] = (DrawItem){ w->wx + s->fx + w->wy + s->fy - 2, w->wx + s->fx - 1, w->wy + s->fy - 1, (w->z - r->basez) * 16, w->slot, 0, {0}, 0 };
     }
-    items[n++] = (DrawItem){ g->hero.x + g->hero.y, g->hero.x, g->hero.y, g->hero.z, 8, 1 };
+    items[n++] = (DrawItem){ g->hero.x + g->hero.y, g->hero.x, g->hero.y, g->hero.z, 8, 1, box_of(g, &g->hero), 1 };
     qsort(items, n, sizeof items[0], cmp_item);
+    {   /* depth order: an item that is strictly behind (smaller x or y) or underneath another one is drawn first, so things standing on a table
+           are not hidden by it; the x+y sort above is only the tie-break. */
+        DrawItem ord[256]; char done[256] = {0}; int m = 0;
+        while (m < n) {
+            int pick = -1;
+            for (int i = 0; i < n && pick < 0; i++) {
+                if (done[i]) continue;
+                int blocked = 0;
+                for (int j = 0; j < n && !blocked; j++) {
+                    if (done[j] || j == i || !items[i].solid || !items[j].solid) continue;
+                    const Box *A = &items[j].b, *B = &items[i].b;               /* does j have to come before i? */
+                    int xy = !(A->x1 < B->x0 || B->x1 < A->x0 || A->y1 < B->y0 || B->y1 < A->y0);
+                    if (xy) blocked = A->z1 < B->z0;
+                    else { int bh = A->x1 < B->x0 || A->y1 < B->y0, rv = B->x1 < A->x0 || B->y1 < A->y0; blocked = bh && !rv; }
+                }
+                if (!blocked) pick = i;
+            }
+            if (pick < 0) for (int i = 0; i < n; i++) if (!done[i]) { pick = i; break; }
+            done[pick] = 1; ord[m++] = items[pick];
+        }
+        memcpy(items, ord, sizeof(DrawItem) * (size_t)n);
+    }
     for (int i = 0; i < n; i++) {
         const DrawItem *d = &items[i]; const Sprite *s = &g->spr[d->slot];
         int px, py; project(g, r->org, d->x, d->y, d->z, s->f, &px, &py);

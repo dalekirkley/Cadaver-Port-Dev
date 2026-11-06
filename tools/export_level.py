@@ -37,8 +37,19 @@ for n in range(100):
     r=L.room(n)
     if not r:P('B',0);continue
     P('B',1);P('5B',r['x0'],r['y0'],r['sx'],r['sy'],r['raw'][0x1e]);P('H',L.origin(r['sx'],r['sy']))
-    bg=L.render_room(n,objects=False);o+=bg.tobytes()
-    W=wall_boxes(L,r);P('H',len(W))
+    bg=L.render_room(n,objects=False);W=wall_boxes(L,r)
+    # Exits on the far (bottom/right) sides lie beyond the floor grid; the original draws a doorstep of two plain floor tiles there
+    # (verified on level 1 room 1: tile 24 at cells 1,2 just below the grid; level 2's tile is a plain one, id guessed from the playthrough).
+    LEDGE={1:24,2:32}.get(lvl,24);orgr=L.origin(r['sx'],r['sy']);tt=L.floor_tile(LEDGE)
+    for w in W:
+        b=w['box']
+        if w['orient']==1 and b[1]>=r['sy']*8: cells=[(i,r['sy']) for i in range(r['sx']) if b[0]<=i*8 and i*8+7<=b[2]]
+        elif w['orient']==0 and b[0]>=r['sx']*8: cells=[(r['sx'],j) for j in range(r['sy']) if b[1]<=j*8 and j*8+7<=b[3]]
+        else: continue
+        for i,j in cells:
+            bl,bb=divmod(orgr+322*i+318*j,40);bg.paste(tt,(bb*8,bl),tt)
+    o+=bg.tobytes()
+    P('H',len(W))
     for w in W:P('hhB4hHBhhHHB',w['x'],w['y'],w['orient'],*w['box'],w['slot'],w['z'],w['wx'],w['wy'],w['idx'],w['flags'],w['b7'])
     lst=L.g5.rec(n);ids=[u16(lst,k) for k in range(0,len(lst),2)];P('H',len(ids))
     for pid in ids:
