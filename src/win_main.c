@@ -43,6 +43,7 @@ static int read_joy(void) {
     if (K(VK_RIGHT) || K('D')) j |= JOY_RIGHT;
     if (K(VK_CONTROL) || K(VK_SPACE)) j |= JOY_FIRE;
     if (K(VK_F1) || K('M')) j |= JOY_MAP;
+    if (K(VK_F12)) j |= JOY_DEBUG;
     return j;
 }
 

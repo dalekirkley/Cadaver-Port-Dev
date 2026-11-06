@@ -12,6 +12,7 @@
 #define JOY_DOWN 2
 #define JOY_LEFT 4
 #define JOY_RIGHT 8
+#define JOY_DEBUG 0x80                     /* F12: debug overlay */
 #define JOY_MAP 0x40                       /* map key (F1): toggles the visited-rooms panel */
 #define JOY_FIRE 0x80
 

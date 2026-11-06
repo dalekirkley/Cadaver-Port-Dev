@@ -38,7 +38,7 @@ struct Game {
     Obj hero;                         /* hero.slot = 8 */
     int facing, anim_t, moving;
     uint8_t font[46 * 24], fontmap[32]; char **text; int ntext; int day; int energy; int jump_t, jump_z0;
-    int has_scroll; uint8_t scroll_tiles[18 * 32], scroll_map[0x30], font5[46 * 20]; int nexam, nuse, ntake; uint16_t take_pid[512]; int16_t take_gold[512], take_xp[512]; uint8_t counter[256]; int nhid; struct { int room; Obj o; } hid[128]; int nvm; uint16_t vm_pid[256]; uint8_t vm_len[256], vm_code[256][255]; uint16_t exam_pid[512], exam_text[512], use_pid[512], use_text[512];   /* examine scroll */
+    int has_scroll; uint8_t scroll_tiles[18 * 32], scroll_map[0x30], font5[46 * 20]; int nexam, nuse, ntake; uint16_t take_pid[512]; int16_t take_gold[512], take_xp[512]; uint8_t counter[256]; int nhid; struct { int room; Obj o; } hid[128]; int dbg, dbg_verb, dbg_pid, dbg_ran; int nvm; uint16_t vm_pid[256]; uint8_t vm_len[256], vm_code[256][255]; uint16_t exam_pid[512], exam_text[512], use_pid[512], use_text[512];   /* examine scroll */
     int scroll_t; char scroll_str[256]; long score; int map_open, map_px, map_py, status_open; long gold, xp, level; uint8_t visited[100];
     int has_icons; uint8_t icons[20 * 112]; uint16_t slotpos[8][4]; uint8_t verbtab[16];
     int target, nverbs, verbs[8], menu, sel, prev_joy, msg, msg_t, ninv, inv[64];     /* verb menu state */
@@ -382,6 +382,7 @@ static void say(Game *g, int text_id) { g->msg = text_id; g->msg_t = 50; }
 static void exec_verb(Game *g, int verb) {
     Room *r = &g->rooms[g->cur];
     if (g->target < 0) return;
+    g->dbg_verb = verb; g->dbg_pid = r->objs[g->target].pid; g->dbg_ran = 0;
     if (verb == 2 && g->ninv < 64) {                                                 /* take: the object goes to the rucksack */
         { int pid = r->objs[g->target].pid;                                          /* treasure: gold and XP from the take script ($ffdc/$ffa0) */
           for (int i = 0; i < g->ntake; i++) if (g->take_pid[i] == pid) {
@@ -410,7 +411,7 @@ static void exec_verb(Game *g, int verb) {
     }
     if (verb == 7 || verb == 4 || (verb == 6 && g->has_scroll)) {                                  /* use / pull a lever: event-5 script (a lever also clicks, sound $38) */
         int pid = r->objs[g->target].pid;
-        { int ran = 0; for (int i = 0; i < g->nvm; i++) if (g->vm_pid[i] == pid) { if (!ran && (verb == 7 || verb == 4)) play_sound(g, 0x38); ran = 1; run_script(g, &r->objs[g->target], g->vm_code[i], g->vm_len[i]); } if (ran) return; }
+        { int ran = 0; for (int i = 0; i < g->nvm; i++) if (g->vm_pid[i] == pid) { if (!ran && (verb == 7 || verb == 4)) play_sound(g, 0x38); ran = 1; g->dbg_ran++; run_script(g, &r->objs[g->target], g->vm_code[i], g->vm_len[i]); } if (ran) return; }
     }
     if (verb == 6 && g->has_scroll) {                                                 /* use: event 5 message scripts (inscriptions, switches) */
         int pid = r->objs[g->target].pid;
@@ -479,6 +480,7 @@ void game_tick(Game *g, int joy) {
     int prev = g->prev_joy; g->prev_joy = joy;
     g->visited[g->cur] = 1;
     if (g->status_open) { if ((joy & 0xCF) && !(prev & 0xCF)) g->status_open = 0; return; }              /* diary panel: waits for a key ($9d68) */
+    if ((joy & JOY_DEBUG) && !(prev & JOY_DEBUG)) g->dbg ^= 1;
     if ((joy & JOY_MAP) && !(prev & JOY_MAP) && g->has_scroll) { g->map_open ^= 1; g->map_px = g->map_py = 0; }     /* F1: map of the rooms entered so far */
     if (g->map_open) {                                                                          /* the game waits; the joystick pans the view (1 cell per tick), fire closes it ($a3e8..$a4dc) */
         g->map_px += ((joy & JOY_RIGHT) ? 1 : 0) - ((joy & JOY_LEFT) ? 1 : 0); g->map_py += ((joy & JOY_DOWN) ? 1 : 0) - ((joy & JOY_UP) ? 1 : 0);
@@ -764,6 +766,13 @@ void game_render(const Game *g, uint32_t *fb) {
                 }
             }
         }   /* measured against the original: 3 px right of the nominal box */
+    }
+    if (g->dbg && g->has_scroll) {
+        char b[96];
+        snprintf(b, sizeof b, "NVM %d EXAM %d TAKE %d HID %d", g->nvm, g->nexam, g->ntake, g->nhid); put5(g, fb, b, 4, 4);
+        snprintf(b, sizeof b, "ROOM %d TARGET %d VERBS %d", g->cur, g->target, g->nverbs); put5(g, fb, b, 4, 11);
+        snprintf(b, sizeof b, "LAST VERB %d PID %d RAN %d", g->dbg_verb, g->dbg_pid, g->dbg_ran); put5(g, fb, b, 4, 18);
+        snprintf(b, sizeof b, "WALL51 %d HERO %d %d", g->wallflag[51], g->hero.x, g->hero.y); put5(g, fb, b, 4, 25);
     }
     if (g->hud) draw_energy(g, fb);
     if (g->scroll_t > 0) draw_scroll(g, fb);
