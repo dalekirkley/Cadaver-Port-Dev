@@ -16,7 +16,7 @@ typedef struct { int sfx; double pos, step; int vol; double left; } Voice;   /* 
 typedef struct { int state, w, h; int16_t f[5]; int push; int16_t fx, fy, fz; uint8_t *px; } Sprite;
 typedef struct { int16_t hx, hy; int w, h; uint8_t *px; } Frame;
 typedef struct { int x, y, z, slot, flags, pid; } Obj;       /* x,y = max corner, inclusive box */
-typedef struct { int x, y, orient; int box[4]; int slot, z, wx, wy; } Wall;
+typedef struct { int x, y, orient; int box[4]; int slot, z, wx, wy; int open; } Wall;
 typedef struct {
     int valid, x0, y0, sx, sy, basez, org;
     uint8_t *bg;                      /* 320*200*4 */
@@ -167,10 +167,11 @@ static int try_move(Game *g, Room *r, Obj *o, int dx, int dy, int depth) {
     o->x = nx; o->y = ny; return 1;
 }
 
-static int neighbour(const Game *g, int wx, int wy) {
+static int neighbour(const Game *g, int wx, int wy, int horiz) {
     for (int n = 0; n < 100; n++) {
         const Room *r = &g->rooms[n]; if (!r->valid || n == g->cur) continue;
-        if (r->x0 <= wx && wx < r->x0 + r->sx && r->y0 - 1 <= wy && wy <= r->y0 + r->sy) return n;
+        if (horiz ? (r->x0 <= wx && wx < r->x0 + r->sx && r->y0 - 1 <= wy && wy <= r->y0 + r->sy)
+                  : (r->x0 - 1 <= wx && wx <= r->x0 + r->sx && r->y0 <= wy && wy < r->y0 + r->sy)) return n;
     }
     return -1;
 }
@@ -181,9 +182,15 @@ static int try_exit(Game *g, int dx, int dy) {
     int nx = h->x + dx, ny = h->y + dy;
     for (int k = 0; k < r->nwalls; k++) {
         Wall *w = &r->walls[k];
+        if (dy != 0 && w->orient == 0) continue;
+        if (dx != 0 && dy == 0 && w->orient != 0) continue;
+        if (dy < 0 && w->box[1] >= r->sy * 4) continue;           /* must be the wall on the side we are leaving through */
+        if (dy > 0 && w->box[1] < r->sy * 4) continue;
+        if (dy == 0 && dx < 0 && w->box[0] >= r->sx * 4) continue;
+        if (dy == 0 && dx > 0 && w->box[0] < r->sx * 4) continue;
         if (dy != 0) { if (!(w->box[0] <= nx - HERO_FX + 1 && nx <= w->box[2])) continue; }
         else         { if (!(w->box[1] <= ny - HERO_FY + 1 && ny <= w->box[3])) continue; }
-        int n = neighbour(g, w->x, w->y); if (n < 0) continue;
+        int n = neighbour(g, w->x, w->y, w->orient != 0); if (n < 0) continue;
         Room *nr = &g->rooms[n]; int x, y;
         if (w->orient != 0) {
             x = (w->x + 1 - nr->x0) * 8 + 4;
@@ -224,6 +231,12 @@ void game_tick(Game *g, int joy) {
         g->walk_step = step & 3; g->walk_ticks++;
     } else g->walk_ticks = 0;
     g->anim_t++;
+    /* Doors: a stand-in for the original behaviour (not yet decoded) - the door slides away while the hero is near it. */
+    for (int k = 0; k < r->nwalls; k++) {
+        Wall *w = &r->walls[k]; const Sprite *s = &g->spr[w->slot];
+        if (!(s->state == 1 && s->h > 1)) continue;
+        w->open = (h->x >= w->box[0] - 8 && h->x - HERO_FX + 1 <= w->box[2] + 8 && h->y >= w->box[1] - 8 && h->y - HERO_FY + 1 <= w->box[3] + 8);
+    }
 }
 
 /* ---------------------------------------------------------------- rendering */
@@ -277,7 +290,7 @@ void game_render(const Game *g, uint32_t *fb) {
     }
     for (int i = 0; i < r->nwalls && n < 255; i++) {
         const Wall *w = &r->walls[i]; const Sprite *s = &g->spr[w->slot];
-        if (s->state == 1 && s->h > 1) items[n++] = (DrawItem){ w->box[2] + w->box[3], w->box[2], w->box[3], (w->z - r->basez) * 16, w->slot, 0 };
+        if (s->state == 1 && s->h > 1 && !w->open) items[n++] = (DrawItem){ w->wx + s->fx + w->wy + s->fy - 2, w->wx + s->fx - 1, w->wy + s->fy - 1, (w->z - r->basez) * 16, w->slot, 0 };
     }
     items[n++] = (DrawItem){ g->hero.x + g->hero.y, g->hero.x, g->hero.y, g->hero.z, 8, 1 };
     qsort(items, n, sizeof items[0], cmp_item);
