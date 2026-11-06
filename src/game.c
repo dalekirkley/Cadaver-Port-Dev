@@ -229,7 +229,15 @@ static int try_exit(Game *g, int dx, int dy) {
         if (dy != 0) { if (!(w->box[0] <= nx - HERO_FX + 1 && nx <= w->box[2])) continue; }
         else         { if (!(w->box[1] <= ny - HERO_FY + 1 && ny <= w->box[3])) continue; }
         int n = neighbour(g, w->x, w->y, w->orient != 0); if (n < 0) continue;
-        if (wall_closed(g, w)) {                                  /* shut door: bump, with a sound at most every 32 ticks ($9be counter) */
+        if (wall_closed(g, w) && w->idx < MAX_WALLIDX && g->wallflag[w->idx] != 0xffff) {
+            int key = g->wallflag[w->idx];                        /* locked door: the key item's placement id is the flag value */
+            for (int i = 0; i < g->ninv; i++) if (g->inv[i] == key) {
+                if (w->b7 & 2) { memmove(&g->inv[i], &g->inv[i + 1], (size_t)(g->ninv - i - 1) * sizeof(int)); g->ninv--; }   /* key consumed */
+                if (w->b7 & 4) g->wallflag[w->idx] = 0;           /* unlocked for good */
+                play_sound(g, 18, 428, 24, 0.5); say(g, 1); key = 0; break;
+            }
+            if (key) { if (g->bump_timer <= 0) { play_sound(g, 60, 428, 24, 0.5); g->bump_timer = 32; } return 0; }
+        } else if (wall_closed(g, w)) {                           /* shut door: bump, with a sound at most every 32 ticks ($9be counter) */
             if (g->bump_timer <= 0) { play_sound(g, 60, 428, 24, 0.5); g->bump_timer = 32; }
             return 0;
         }
