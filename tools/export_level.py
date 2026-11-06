@@ -64,7 +64,16 @@ for y in range(115,200):
 P('B',1);o+=hud.tobytes()
 # text: font (46 glyphs, 8x6, 4 plane-bytes per row), char->glyph table for 0x21..0x40, the level's strings and per-room name fields
 import lzhuf,textdec
+import struct as _st
+def _text_ok(b):
+    n=_st.unpack('>H',b[4:6])[0];of=[_st.unpack('>H',b[6+2*i:8+2*i])[0] for i in range(n+1)]
+    return all(of[i]>=of[i-1] and of[i]-of[i-1]<400 for i in range(1,n+1))
 blob=lzhuf.decode(open(adf,'rb').read(),L.sectors['text']*512);T=textdec.decode_text(blob,L.game)
+if not _text_ok(blob):
+    # Levels 2+ on the supplied Disk 2 image decompress to a damaged string table (the original game's own decoder produces the
+    # same bytes). Fall back to level 1's strings for the shared message range (ids < 123: DAY, door/verb messages) and blanks.
+    L1=Level(adf,gb,1);T1=textdec.decode_text(lzhuf.decode(open(adf,'rb').read(),L1.sectors['text']*512),L1.game)
+    T=[T1[i] if i<123 else '' for i in range(len(T))];print('WARNING: level text damaged on this disk image; using level 1 shared strings only')
 P('B',1);o+=bytes(L.game[0x4c22-0xb8:0x4c22-0xb8+46*24]);o+=bytes(L.game[0x560e-0xb8:0x560e-0xb8+32])
 P('H',len(T))
 for t in T:

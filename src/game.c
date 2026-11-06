@@ -111,6 +111,7 @@ Game *game_load(const char *path) {
     g->target = -1; g->msg = -1;
     g->cur = g->start_room; g->hero.x += 1;                                /* level start nudges the hero +1 in x */
     g->facing = JOY_RIGHT; g->day = 1;
+    { const char *q = strstr(path, "level"); if (q && q[5] >= '1' && q[5] <= '9') g->day = q[5] - '0'; }   /* the day counter is the level number (level2.bin shows DAY 2) */
     return g;
 }
 
