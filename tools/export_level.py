@@ -62,4 +62,15 @@ for y in range(115,200):
             for b in range(16):
                 c=sum(((ws[k]>>(15-b))&1)<<k for k in range(4));hud[y,x0+b]=tuple(L.rgb[c])+((255 if c else 0),)   # colour 0 is transparent (room shows through the strips' edges)
 P('B',1);o+=hud.tobytes()
+# text: font (46 glyphs, 8x6, 4 plane-bytes per row), char->glyph table for 0x21..0x40, the level's strings and per-room name fields
+import lzhuf,textdec
+blob=lzhuf.decode(open(adf,'rb').read(),L.sectors['text']*512);T=textdec.decode_text(blob,L.game)
+P('B',1);o+=bytes(L.game[0x4c22-0xb8:0x4c22-0xb8+46*24]);o+=bytes(L.game[0x560e-0xb8:0x560e-0xb8+32])
+P('H',len(T))
+for t in T:
+    b=t.replace('\n','\r').encode('latin1','replace');P('H',len(b));o+=b
+for n in range(100):
+    r=L.room(n)
+    if r:P('Bh',r['raw'][0x1a],s16(r['raw'],0x18))
+    else:P('Bh',255,-1)
 open(out,'wb').write(o);print(len(o),'bytes')

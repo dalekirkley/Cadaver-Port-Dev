@@ -18,7 +18,7 @@ typedef struct { int16_t hx, hy; int w, h; uint8_t *px; } Frame;
 typedef struct { int x, y, z, slot, flags, pid; } Obj;       /* x,y = max corner, inclusive box */
 typedef struct { int x, y, orient; int box[4]; int slot, z, wx, wy; int idx, flags, b7; } Wall;
 typedef struct {
-    int valid, x0, y0, sx, sy, basez, org;
+    int valid, x0, y0, sx, sy, basez, org, name, prefix;
     uint8_t *bg;                      /* 320*200*4 */
     int nwalls; Wall *walls;
     int nobj; Obj *objs;              /* live state, persists while the program runs */
@@ -34,6 +34,7 @@ struct Game {
     int cur;
     Obj hero;                         /* hero.slot = 8 */
     int facing, anim_t, moving;
+    uint8_t font[46 * 24], fontmap[32]; char **text; int ntext; int day;
     uint16_t wallflag[MAX_WALLIDX]; int bump_timer;    /* wall-record flags, shared by the two rooms a wall joins */
     unsigned tickno; int walk_ticks, walk_step, start_room;
     Sfx sfx[65]; Voice voice[4];
@@ -93,9 +94,15 @@ Game *game_load(const char *path) {
           rd(f, g->sfx[i].data, g->sfx[i].len);
       } }
     if (rd8(f) == 1) { g->hud = malloc(SCREEN_W * SCREEN_H * 4); if (!rd(f, g->hud, SCREEN_W * SCREEN_H * 4)) { free(g->hud); g->hud = NULL; } }
+    if (rd8(f) == 1) {                                                 /* optional: font, strings, room names */
+        rd(f, g->font, sizeof g->font); rd(f, g->fontmap, sizeof g->fontmap);
+        g->ntext = rd16(f); g->text = calloc(g->ntext ? g->ntext : 1, sizeof(char *));
+        for (int i = 0; i < g->ntext; i++) { int ln = rd16(f); g->text[i] = malloc(ln + 1); rd(f, g->text[i], ln); g->text[i][ln] = 0; }
+        for (int n = 0; n < 100; n++) { g->rooms[n].name = rd8(f); g->rooms[n].prefix = (int16_t)rd16(f); }
+    }
     fclose(f);
     g->cur = g->start_room; g->hero.x += 1;                                /* level start nudges the hero +1 in x */
-    g->facing = JOY_RIGHT;
+    g->facing = JOY_RIGHT; g->day = 1;
     return g;
 }
 
@@ -105,6 +112,8 @@ void game_free(Game *g) {
     for (int n = 0; n < g->nframes; n++) free(g->frames[n].px);
     for (int n = 0; n < 100; n++) { free(g->rooms[n].bg); free(g->rooms[n].walls); free(g->rooms[n].objs); }
     free(g->hud);
+    for (int i = 0; i < g->ntext; i++) free(g->text[i]);
+    free(g->text);
     for (int i = 0; i < 65; i++) free(g->sfx[i].data);
     free(g->frames); free(g);
 }
@@ -286,6 +295,23 @@ static int hero_frame(const Game *g) {
     return g->moving ? a[g->walk_step] : idle_frame;
 }
 
+/* Original text printer ($10f82): 8x6 glyphs, advance 7, centred in a box; glyph pixel value = palette index (0 = clear). */
+static void draw_text(const Game *g, uint32_t *fb, const char *str, int x, int y, int width) {
+    int len = (int)strlen(str); x += (width - len * 7) / 2;
+    for (const char *c = str; *c; c++, x += 7) {
+        int ch = (unsigned char)*c, gi;
+        if (ch == ' ' || ch < 0x21) continue;
+        gi = ch >= 0x41 ? ch - 0x41 : g->fontmap[ch - 0x21];
+        if (gi >= 46) continue;
+        const uint8_t *gl = g->font + gi * 24;
+        for (int row = 0; row < 6; row++) for (int col = 0; col < 8; col++) {
+            int v = 0; for (int p = 0; p < 4; p++) v |= ((gl[row * 4 + p] >> (7 - col)) & 1) << p;
+            int X = x + col, Y = y + row; if (!v || X < 0 || X >= SCREEN_W || Y < 0 || Y >= SCREEN_H) continue;
+            fb[Y * SCREEN_W + X] = g->pal[v][0] | g->pal[v][1] << 8 | g->pal[v][2] << 16 | 0xFF000000u;
+        }
+    }
+}
+
 void game_render(const Game *g, uint32_t *fb) {
     const Room *r = &g->rooms[g->cur];
     memcpy(fb, r->bg, SCREEN_W * SCREEN_H * 4);
@@ -309,4 +335,13 @@ void game_render(const Game *g, uint32_t *fb) {
         } else if (s->state == 1) blit(fb, s->px, s->w, s->h, px, py);
     }
     if (g->hud) blit(fb, g->hud, SCREEN_W, SCREEN_H, 0, 0);     /* bottom panel frame over the room */
+    if (g->text) {
+        char buf[96];
+        snprintf(buf, sizeof buf, "%s %d", g->ntext > 29 ? g->text[29] : "DAY", g->day);
+        draw_text(g, fb, buf, 252, 158, 60);
+        buf[0] = 0;
+        if (r->prefix >= 0 && r->prefix < g->ntext) { strncat(buf, g->text[r->prefix], 40); strcat(buf, " "); }
+        if (r->name < 19 && 126 + r->name < g->ntext) strncat(buf, g->text[126 + r->name], 40);
+        draw_text(g, fb, buf, 205, 186, 108);   /* measured against the original: 3 px right of the nominal box */
+    }
 }
