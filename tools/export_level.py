@@ -63,6 +63,7 @@ for i in range(65):
 # HUD frame (bottom panel), stored in the game image as per-row left and right strips of n(y) words each
 # (n grows by one every 8 rows as the diagonal edges close in); word-interleaved 4-plane, strip pixels are opaque, pixels outside the strips transparent.
 hud=np.zeros((200,320,4),np.uint8);off=0x4c5b2-0x4bd48-0xb8
+cidx=np.zeros((200,320),int);part_of=np.zeros((200,320),int)
 for y in range(115,200):
     n=7+(y-163)//8
     if n<1:continue
@@ -71,7 +72,18 @@ for y in range(115,200):
             ws=[int.from_bytes(L.game[off+2*k:off+2*k+2],'big') for k in range(4)];off+=8
             x0=(wd if part==0 else 20-n+wd)*16
             for b in range(16):
-                c=sum(((ws[k]>>(15-b))&1)<<k for k in range(4));hud[y,x0+b]=tuple(L.rgb[c])+(255,)   # the strips are copied over the room including their black (verified: 93% of colour-0 strip pixels are black in the original; the rest is the energy bar)
+                cidx[y,x0+b]=sum(((ws[k]>>(15-b))&1)<<k for k in range(4));part_of[y,x0+b]=part+1
+# A strip pixel is solid if it has colour, or is black on the panel side of the decoration's diagonal outline (left strip: left of its
+# last coloured pixel, right strip: right of its first); black beyond the outline is playfield and stays transparent, which gives the smooth
+# diagonal edge. (Verified against the original frame: every pixel treated as solid black is black there; the room shows only outside.)
+for y in range(115,200):
+    for part in (1,2):
+        xs=np.where(part_of[y]==part)[0]
+        if not len(xs):continue
+        nz=[x for x in xs if cidx[y,x]]
+        for x in xs:
+            solid=cidx[y,x]!=0 or (nz and ((part==1 and x<max(nz)) or (part==2 and x>min(nz))))
+            if solid:hud[y,x]=tuple(L.rgb[cidx[y,x]])+(255,)
 P('B',1);o+=hud.tobytes()
 # text: font (46 glyphs, 8x6, 4 plane-bytes per row), char->glyph table for 0x21..0x40, the level's strings and per-room name fields
 import lzhuf,textdec
