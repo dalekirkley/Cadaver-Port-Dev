@@ -22,7 +22,7 @@ for s in range(255):
     e=L.g2.rec(s);im=L.sprite(s,0) if e else None
     if e is None or len(e)<0x20:P('B',0);continue
     P('B',1 if im is not None else 2)
-    F=[s16(e,x) for x in (2,4,0x10,0x12,0x14)];P('5h',*F);P('B',e[0x0c]&3);P('3h',F[2],F[3],F[4])
+    F=[s16(e,x) for x in (2,4,0x10,0x12,0x14)];P('5h',*F);P('B',e[0x0c]&3);P('3h',F[2],F[3],F[4]);P('h',s16(e,0xa))
     if im is not None:P('HH',im.width,im.height);o+=im.tobytes()
 # player frames
 RGB=L.rgb;bank.PAL=list(range(16));bank.rgb=lambda i:RGB[i]

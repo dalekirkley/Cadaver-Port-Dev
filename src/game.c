@@ -13,7 +13,7 @@
 
 typedef struct { int len; int8_t *data; } Sfx;
 typedef struct { int sfx; double pos, step; int vol; double left; } Voice;   /* left = seconds before the voice is cut (0 = play to the end) */
-typedef struct { int state, w, h; int16_t f[5]; int push; int16_t fx, fy, fz; uint8_t *px; } Sprite;
+typedef struct { int state, w, h; int16_t f[5]; int push; int16_t fx, fy, fz, name; uint8_t *px; } Sprite;
 typedef struct { int16_t hx, hy; int w, h; uint8_t *px; } Frame;
 typedef struct { int x, y, z, slot, flags, pid; } Obj;       /* x,y = max corner, inclusive box */
 typedef struct { int x, y, orient; int box[4]; int slot, z, wx, wy; int idx, flags, b7; } Wall;
@@ -60,7 +60,7 @@ Game *game_load(const char *path) {
         Sprite *sp = &g->spr[s]; sp->state = rd8(f);
         if (!sp->state) continue;
         for (int k = 0; k < 5; k++) sp->f[k] = (int16_t)rds16(f);
-        sp->push = rd8(f); sp->fx = rds16(f); sp->fy = rds16(f); sp->fz = rds16(f);
+        sp->push = rd8(f); sp->fx = rds16(f); sp->fy = rds16(f); sp->fz = rds16(f); sp->name = rds16(f);
         if (sp->state == 1) { sp->w = rd16(f); sp->h = rd16(f); sp->px = malloc((size_t)sp->w * sp->h * 4); rd(f, sp->px, (size_t)sp->w * sp->h * 4); }
     }
     g->nframes = rd32(f); g->frames = calloc(g->nframes, sizeof(Frame));
@@ -177,6 +177,20 @@ static int try_move(Game *g, Room *r, Obj *o, int dx, int dy, int depth) {
         }
     }
     o->x = nx; o->y = ny; return 1;
+}
+
+/* Name of the object the hero is touching in his facing direction (original $9090: probe one unit ahead with $8264). */
+static int facing_name(const Game *g) {
+    const Room *r = &g->rooms[g->cur];
+    int dx = ((g->facing & JOY_RIGHT) ? 1 : 0) - ((g->facing & JOY_LEFT) ? 1 : 0);
+    int dy = ((g->facing & JOY_DOWN) ? 1 : 0) - ((g->facing & JOY_UP) ? 1 : 0);
+    if (!dx && !dy) return -1;
+    Obj ghost = g->hero; ghost.x += dx; ghost.y += dy; Box gb = box_of(g, &ghost);
+    for (int i = 0; i < r->nobj; i++) {
+        const Obj *q = &r->objs[i]; if (flat(g, q)) continue;
+        if (overlap(gb, box_of(g, q))) return g->spr[q->slot].name;
+    }
+    return -1;
 }
 
 static int neighbour(const Game *g, int wx, int wy, int horiz) {
@@ -342,6 +356,8 @@ void game_render(const Game *g, uint32_t *fb) {
         buf[0] = 0;
         if (r->prefix >= 0 && r->prefix < g->ntext) { strncat(buf, g->text[r->prefix], 40); strcat(buf, " "); }
         if (r->name < 19 && 126 + r->name < g->ntext) strncat(buf, g->text[126 + r->name], 40);
-        draw_text(g, fb, buf, 205, 186, 108);   /* measured against the original: 3 px right of the nominal box */
+        draw_text(g, fb, buf, 205, 186, 108);
+        int nm = facing_name(g);
+        if (nm >= 0 && nm < g->ntext) draw_text(g, fb, g->text[nm], 229, 172, 84);   /* measured against the original: 3 px right of the nominal box */
     }
 }
