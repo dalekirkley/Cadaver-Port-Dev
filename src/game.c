@@ -123,7 +123,8 @@ Game *game_load(const char *path) {
         g->ntake = rd16(f); if (g->ntake < 0 || g->ntake > 512) g->ntake = 0;
         for (int i = 0; i < g->ntake; i++) { g->take_pid[i] = (uint16_t)rd16(f); g->take_gold[i] = (int16_t)rd16(f); g->take_xp[i] = (int16_t)rd16(f); }
         { int na = rd16(f); if (na < 0 || na > 255) na = 0;          /* second sprite image (lever pulled) */
-          for (int i = 0; i < na; i++) { int sl = rd8(f); Sprite *sp = &g->spr[sl]; sp->ax = rds16(f); sp->ay = rds16(f); sp->aw = rd16(f); sp->ah = rd16(f); sp->apx = malloc((size_t)sp->aw * sp->ah * 4); rd(f, sp->apx, (size_t)sp->aw * sp->ah * 4); } }
+          for (int i = 0; i < na; i++) { int sl = rd8(f); Sprite *sp = &g->spr[sl]; sp->aw = rd16(f); sp->ah = rd16(f); sp->apx = malloc((size_t)sp->aw * sp->ah * 4); rd(f, sp->apx, (size_t)sp->aw * sp->ah * 4); } }
+        { int na = rd16(f); if (na < 0 || na > 255) na = 0; for (int i = 0; i < na; i++) { int sl = rd8(f); int ax = rds16(f), ay = rds16(f); g->spr[sl].ax = ax; g->spr[sl].ay = ay; } }   /* alt image offsets (optional) */
         g->has_scroll = 1;
     }
     fclose(f);

@@ -197,5 +197,9 @@ P('H',len(alt))
 for s in alt:
     e=L.g2.rec(s);tab=0x28+u16(e,0x22)
     ax=s16(e,tab+8+2)-s16(e,tab+2);ay=s16(e,tab+8+4)-s16(e,tab+4)   # offset of frame 1 relative to frame 0
-    im=L.sprite(s,1);P('B',s);P('hh',ax,ay);P('HH',im.width,im.height);o+=im.tobytes()
+    im=L.sprite(s,1);P('B',s);P('HH',im.width,im.height);o+=im.tobytes()
+# offsets of the alternate images (separate section so older/newer builds stay compatible): slot, dx, dy
+P('H',len(alt))
+for s in alt:
+    e=L.g2.rec(s);tab=0x28+u16(e,0x22);P('Bhh',s,s16(e,tab+8+2)-s16(e,tab+2),s16(e,tab+8+4)-s16(e,tab+4))
 open(out,'wb').write(o);print(len(o),'bytes,',len(exam),'examine texts')
