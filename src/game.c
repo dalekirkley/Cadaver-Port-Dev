@@ -35,7 +35,7 @@ struct Game {
     int cur;
     Obj hero;                         /* hero.slot = 8 */
     int facing, anim_t, moving;
-    uint8_t font[46 * 24], fontmap[32]; char **text; int ntext; int day; int energy;
+    uint8_t font[46 * 24], fontmap[32]; char **text; int ntext; int day; int energy; int jump_t, jump_z0;
     int has_icons; uint8_t icons[20 * 112]; uint16_t slotpos[8][4]; uint8_t verbtab[16];
     int target, nverbs, verbs[8], menu, sel, prev_joy, msg, msg_t, ninv, inv[64];     /* verb menu state */
     uint16_t wallflag[MAX_WALLIDX]; int bump_timer;    /* wall-record flags, shared by the two rooms a wall joins */
@@ -320,6 +320,18 @@ static int try_step_up(Game *g, Room *r, int dx, int dy) {
 }
 
 /* Gravity: the hero rests on the highest object top under his feet (or the floor) and drops a few units per tick. */
+/* Jump profile measured in the original (hero z above the take-off height after each logic tick; 20 ticks, apex 35). */
+static const uint8_t JUMP_Z[20] = {5, 10, 14, 18, 22, 26, 29, 32, 34, 35, 34, 32, 29, 26, 22, 18, 14, 10, 5, 0};
+static int hero_grounded(const Game *g, const Room *r) {
+    const Obj *h = &g->hero; Box hb = box_of(g, h); int rest = 0;
+    for (int i = 0; i < r->nobj; i++) {
+        const Obj *q = &r->objs[i]; if (flat(g, q)) continue;
+        Box qb = box_of(g, q);
+        if (qb.x1 < hb.x0 || hb.x1 < qb.x0 || qb.y1 < hb.y0 || hb.y1 < qb.y0) continue;
+        if (qb.z1 + 1 <= h->z && qb.z1 + 1 > rest) rest = qb.z1 + 1;
+    }
+    return h->z <= rest;
+}
 static void hero_gravity(Game *g, Room *r) {
     Obj *h = &g->hero; Box hb = box_of(g, h); int rest = 0;
     for (int i = 0; i < r->nobj; i++) {
@@ -340,6 +352,7 @@ void game_tick(Game *g, int joy) {
         if (g->target < 0 || g->nverbs == 0) g->menu = 0;
         else { if (fire_edge) { g->menu = 0; exec_verb(g, g->verbs[g->sel]); } else if (new_dirs) g->sel = move_sel(g, new_dirs); joy &= ~15; }
     } else if (fire_edge && g->target >= 0 && g->nverbs > 0) { g->menu = 1; g->sel = 0; joy &= ~15; }
+    else if (fire_edge && g->target < 0 && !g->jump_t && hero_grounded(g, r)) { g->jump_t = 1; g->jump_z0 = h->z; }    /* fire with nothing in front: jump */
     int dx = ((joy & JOY_RIGHT) ? 1 : 0) - ((joy & JOY_LEFT) ? 1 : 0);
     int dy = ((joy & JOY_DOWN) ? 1 : 0) - ((joy & JOY_UP) ? 1 : 0);
     g->tickno++;
@@ -352,7 +365,8 @@ void game_tick(Game *g, int joy) {
             if (out) try_exit(g, dx, dy); else try_step_up(g, r, dx, dy);
         }
     }
-    hero_gravity(g, r);
+    if (g->jump_t) { h->z = g->jump_z0 + JUMP_Z[g->jump_t - 1]; if (++g->jump_t > 20) g->jump_t = 0; }
+    else hero_gravity(g, r);
     /* Walking animation + footsteps, timed from an emulator trace of the original: each of the 4 walk frames is shown
        for 3 logic ticks; a footstep (sample 22, period 320, volume 8, cut after 4 video frames = 80 ms) sounds when the
        script reaches its 2nd and 4th frame (the `$fc 00` entries of the walk scripts). */
