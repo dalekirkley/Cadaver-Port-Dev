@@ -38,7 +38,7 @@ struct Game {
     Obj hero;                         /* hero.slot = 8 */
     int facing, anim_t, moving;
     uint8_t font[46 * 24], fontmap[32]; char **text; int ntext; int day; int energy; int jump_t, jump_z0;
-    int has_scroll; uint8_t scroll_tiles[18 * 32], scroll_map[0x30], font5[46 * 20]; int nexam, nuse, ntake; uint16_t take_pid[512]; int16_t take_gold[512], take_xp[512]; uint8_t counter[256]; int nvm; uint16_t vm_pid[256]; uint8_t vm_len[256], vm_code[256][255]; uint16_t exam_pid[512], exam_text[512], use_pid[512], use_text[512];   /* examine scroll */
+    int has_scroll; uint8_t scroll_tiles[18 * 32], scroll_map[0x30], font5[46 * 20]; int nexam, nuse, ntake; uint16_t take_pid[512]; int16_t take_gold[512], take_xp[512]; uint8_t counter[256]; int nhid; struct { int room; Obj o; } hid[128]; int nvm; uint16_t vm_pid[256]; uint8_t vm_len[256], vm_code[256][255]; uint16_t exam_pid[512], exam_text[512], use_pid[512], use_text[512];   /* examine scroll */
     int scroll_t; char scroll_str[256]; long score; int map_open, map_px, map_py, status_open; long gold, xp, level; uint8_t visited[100];
     int has_icons; uint8_t icons[20 * 112]; uint16_t slotpos[8][4]; uint8_t verbtab[16];
     int target, nverbs, verbs[8], menu, sel, prev_joy, msg, msg_t, ninv, inv[64];     /* verb menu state */
@@ -87,10 +87,10 @@ Game *game_load(const char *path) {
             w->slot = rd16(f); w->z = rd8(f); w->wx = rds16(f); w->wy = rds16(f);
             w->idx = rd16(f); w->flags = rd16(f); w->b7 = rd8(f); if (w->idx < MAX_WALLIDX) { g->wallflag[w->idx] = (uint16_t)w->flags; if (w->flags) g->walldoor[w->idx] = 1; }
         }
-        int no = rd16(f); r->objs = calloc(no ? no : 1, sizeof(Obj)); r->nobj = 0;
+        int no = rd16(f); r->objs = calloc((size_t)no + 32, sizeof(Obj)); r->nobj = 0;
         for (int k = 0; k < no; k++) {
             Obj o; o.pid = rd16(f); o.x = rd8(f); o.y = rd8(f); o.z = rd8(f); o.flags = rd8(f); o.slot = rd16(f); o.xflags = rd8(f);
-            if (o.flags & 0x80) continue;                    /* destroyed / not spawned */
+            if (o.flags & 0x80) { if (g->nhid < 128) { g->hid[g->nhid].room = (int)n; g->hid[g->nhid++].o = o; } continue; }   /* not spawned yet: a script can bring it in */
             if (o.slot == 8) { g->hero = o; g->start_hero = o; g->start_room = (int)n; continue; }       /* the player placement */
             r->objs[r->nobj++] = o;
         }
@@ -281,6 +281,11 @@ static void vm_op(Vm *m, int op) {
     case 0x11: o = find_obj(g, vm_word(m)); if (o) o->flags |= 1; break;
     case 0x12: o = find_obj(g, vm_word(m)); if (o) o->flags &= ~1; break;
     case 0x13: o = find_obj(g, vm_word(m)); if (o) o->flags ^= 1; break;
+    case 0x01: { int id = vm_word(m);                                   /* bring a not-yet-spawned object into its room */
+        for (int i = 0; i < g->nhid; i++) if (g->hid[i].o.pid == id) {
+            Room *r = &g->rooms[g->hid[i].room]; Obj o = g->hid[i].o; o.flags &= ~0x80;
+            r->objs[r->nobj++] = o; g->hid[i] = g->hid[--g->nhid]; break; }
+        break; }
     case 0x1f: m->self->flags &= ~1; break;
     case 0x20: m->self->flags |= 1; break;
     case 0x21: m->self->flags ^= 1; break;
@@ -394,9 +399,9 @@ static void exec_verb(Game *g, int verb) {
             snprintf(g->scroll_str, sizeof g->scroll_str, "%s.", g->text[g->exam_text[i]]); g->scroll_t = SCROLL_TICKS; return;
         }
     }
-    if (verb == 7 || (verb == 6 && g->has_scroll)) {                                  /* use / pull a lever: event-5 script (a lever also clicks, sound $38) */
+    if (verb == 7 || verb == 4 || (verb == 6 && g->has_scroll)) {                                  /* use / pull a lever: event-5 script (a lever also clicks, sound $38) */
         int pid = r->objs[g->target].pid;
-        { int ran = 0; for (int i = 0; i < g->nvm; i++) if (g->vm_pid[i] == pid) { if (!ran && verb == 7) play_sound(g, 0x38); ran = 1; run_script(g, &r->objs[g->target], g->vm_code[i], g->vm_len[i]); } if (ran) return; }
+        { int ran = 0; for (int i = 0; i < g->nvm; i++) if (g->vm_pid[i] == pid) { if (!ran && (verb == 7 || verb == 4)) play_sound(g, 0x38); ran = 1; run_script(g, &r->objs[g->target], g->vm_code[i], g->vm_len[i]); } if (ran) return; }
     }
     if (verb == 6 && g->has_scroll) {                                                 /* use: event 5 message scripts (inscriptions, switches) */
         int pid = r->objs[g->target].pid;
