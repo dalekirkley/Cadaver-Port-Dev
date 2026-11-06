@@ -16,7 +16,7 @@ typedef struct { int sfx; double pos, step; int vol; double left; } Voice;   /* 
 typedef struct { int state, w, h; int16_t f[5]; int push; int16_t fx, fy, fz; uint8_t *px; } Sprite;
 typedef struct { int16_t hx, hy; int w, h; uint8_t *px; } Frame;
 typedef struct { int x, y, z, slot, flags, pid; } Obj;       /* x,y = max corner, inclusive box */
-typedef struct { int x, y, orient; int box[4]; } Wall;
+typedef struct { int x, y, orient; int box[4]; int slot, z, wx, wy; } Wall;
 typedef struct {
     int valid, x0, y0, sx, sy, basez, org;
     uint8_t *bg;                      /* 320*200*4 */
@@ -74,6 +74,7 @@ Game *game_load(const char *path) {
         for (int k = 0; k < r->nwalls; k++) {
             Wall *w = &r->walls[k]; w->x = rds16(f); w->y = rds16(f); w->orient = rd8(f);
             for (int b = 0; b < 4; b++) w->box[b] = rds16(f);
+            w->slot = rd16(f); w->z = rd8(f); w->wx = rds16(f); w->wy = rds16(f);
         }
         int no = rd16(f); r->objs = calloc(no ? no : 1, sizeof(Obj)); r->nobj = 0;
         for (int k = 0; k < no; k++) {
@@ -142,6 +143,7 @@ static Box box_of(const Game *g, const Obj *o) {
 static int overlap(Box a, Box b) {
     return !(a.x1 < b.x0 || b.x1 < a.x0 || a.y1 < b.y0 || b.y1 < a.y0 || a.z1 < b.z0 || b.z1 < a.z0);
 }
+static int flat(const Game *g, const Obj *o) { const Sprite *s = &g->spr[o->slot]; return o->slot != 8 && !s->push && s->fz <= 2; }   /* floor decals: walk-over, drawn under everything */
 static int pushable(const Game *g, const Obj *o) { return o->slot != 8 && g->spr[o->slot].push != 0; }
 
 /* Try to move o by (dx,dy); every overlapping object must itself be pushable and movable. */
@@ -151,7 +153,7 @@ static int try_move(Game *g, Room *r, Obj *o, int dx, int dy, int depth) {
     if (nx >= r->sx * 8 || ny >= r->sy * 8 || nx - fx + 1 < MARGIN || ny - fy + 1 < MARGIN || depth > MAX_PUSH_DEPTH) return 0;
     Obj ghost = *o; ghost.x = nx; ghost.y = ny; Box gb = box_of(g, &ghost);
     Obj *hits[64]; int nh = 0;
-    for (int i = 0; i < r->nobj && nh < 64; i++) { Obj *q = &r->objs[i]; if (q == o) continue; if (overlap(gb, box_of(g, q))) hits[nh++] = q; }
+    for (int i = 0; i < r->nobj && nh < 64; i++) { Obj *q = &r->objs[i]; if (q == o || flat(g, q)) continue; if (overlap(gb, box_of(g, q))) hits[nh++] = q; }
     if (o != &g->hero && overlap(gb, box_of(g, &g->hero))) return 0;     /* pushed objects stop at the hero */
     for (int i = 0; i < nh; i++) if (!pushable(g, hits[i])) return 0;
     int sx[64], sy[64];
@@ -271,7 +273,11 @@ void game_render(const Game *g, uint32_t *fb) {
     DrawItem items[256]; int n = 0;
     for (int i = 0; i < r->nobj && n < 255; i++) {
         const Obj *o = &r->objs[i];
-        items[n++] = (DrawItem){ o->x + o->y, o->x, o->y, o->z, o->slot, 0 };
+        items[n++] = (DrawItem){ flat(g, o) ? -1000 : o->x + o->y, o->x, o->y, o->z, o->slot, 0 };
+    }
+    for (int i = 0; i < r->nwalls && n < 255; i++) {
+        const Wall *w = &r->walls[i]; const Sprite *s = &g->spr[w->slot];
+        if (s->state == 1 && s->h > 1) items[n++] = (DrawItem){ w->box[2] + w->box[3], w->box[2], w->box[3], (w->z - r->basez) * 16, w->slot, 0 };
     }
     items[n++] = (DrawItem){ g->hero.x + g->hero.y, g->hero.x, g->hero.y, g->hero.z, 8, 1 };
     qsort(items, n, sizeof items[0], cmp_item);
