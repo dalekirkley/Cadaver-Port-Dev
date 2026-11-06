@@ -1,4 +1,5 @@
 #include "game.h"
+#include "sound_table.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -146,10 +147,19 @@ void game_hero(const Game *g, int *x, int *y, int *z) { *x = g->hero.x; *y = g->
 
 /* ---------------------------------------------------------------- sound */
 /* Original Paula clock: 3546895 / period = sample rate; volume is Paula's 0..64. */
-static void play_sound(Game *g, int id, int period, int vol, double seconds) {
+static void play_voice(Game *g, int id, int period, int vol, double seconds) {
     if (id < 0 || id >= 65 || !g->sfx[id].len) return;
     int v = 0; for (int i = 0; i < 4; i++) if (!g->voice[i].step) { v = i; break; }
     g->voice[v].sfx = id; g->voice[v].pos = 0; g->voice[v].step = 3546895.0 / period; g->voice[v].vol = vol; g->voice[v].left = seconds;
+}
+
+/* Play a game sound id with its real per-voice samples, periods and volumes. */
+static void play_sound(Game *g, int snd) {
+    if (snd < 0 || snd >= 69) return;
+    for (int i = 0; i < 4; i++) {
+        const SndVoice *sv = &SND_TABLE[snd][i];
+        if (sv->sample >= 0) play_voice(g, sv->sample, sv->period, sv->vol, snd == 0 ? 0.1 : 0.6);
+    }
 }
 
 void game_audio_mix(Game *g, int16_t *out, int n, int rate) {
@@ -252,11 +262,11 @@ static int try_exit(Game *g, int dx, int dy) {
             for (int i = 0; i < g->ninv; i++) if (g->inv[i] == key) {
                 if (w->b7 & 2) { memmove(&g->inv[i], &g->inv[i + 1], (size_t)(g->ninv - i - 1) * sizeof(int)); g->ninv--; }   /* key consumed */
                 if (w->b7 & 4) g->wallflag[w->idx] = 0;           /* unlocked for good */
-                play_sound(g, 18, 428, 24, 0.5); say(g, 1); key = 0; break;
+                play_sound(g, 18); say(g, 1); key = 0; break;
             }
-            if (key) { if (g->bump_timer <= 0) { play_sound(g, 60, 428, 24, 0.5); g->bump_timer = 32; } return 0; }
+            if (key) { if (g->bump_timer <= 0) { play_sound(g, 60); g->bump_timer = 32; } return 0; }
         } else if (wall_closed(g, w)) {                           /* shut door: bump, with a sound at most every 32 ticks ($9be counter) */
-            if (g->bump_timer <= 0) { play_sound(g, 60, 428, 24, 0.5); g->bump_timer = 32; }
+            if (g->bump_timer <= 0) { play_sound(g, 60); g->bump_timer = 32; }
             return 0;
         }
         Room *nr = &g->rooms[n]; int x, y;
@@ -298,8 +308,8 @@ static void exec_verb(Game *g, int verb) {
     if (verb == 2 && g->ninv < 64) {                                                 /* take: the object goes to the rucksack */
         { int pid = r->objs[g->target].pid;                                          /* treasure: gold and XP from the take script ($ffdc/$ffa0) */
           for (int i = 0; i < g->ntake; i++) if (g->take_pid[i] == pid) {
-              if (g->take_gold[i]) { g->gold += g->take_gold[i]; play_sound(g, 3, 300, 48, 0.3); }
-              if (g->take_xp[i]) { g->xp += g->take_xp[i]; if (g->xp < 0) g->xp = 0; if (!g->take_gold[i]) play_sound(g, 0x1a, 300, 48, 0.3); }
+              if (g->take_gold[i]) { g->gold += g->take_gold[i]; play_sound(g, 3); }
+              if (g->take_xp[i]) { g->xp += g->take_xp[i]; if (g->xp < 0) g->xp = 0; if (!g->take_gold[i]) play_sound(g, 0x1a); }
               break; } }
         g->inv[g->ninv++] = r->objs[g->target].pid;
         if (g->spr[r->objs[g->target].slot].name >= 0) say(g, g->spr[r->objs[g->target].slot].name);   /* original prints the item name */
@@ -412,7 +422,7 @@ void game_tick(Game *g, int joy) {
        script reaches its 2nd and 4th frame (the `$fc 00` entries of the walk scripts). */
     if (g->moving) {
         int step = g->walk_ticks / WALK_TICKS_PER_FRAME;
-        if (g->walk_ticks % WALK_TICKS_PER_FRAME == 0 && (step & 1)) play_sound(g, 22, 320, 8, 0.08);
+        if (g->walk_ticks % WALK_TICKS_PER_FRAME == 0 && (step & 1)) play_sound(g, 0);
         g->walk_step = step & 3; g->walk_ticks++;
     } else g->walk_ticks = 0;
     g->anim_t++;
