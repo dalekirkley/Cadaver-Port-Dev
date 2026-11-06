@@ -104,7 +104,7 @@ Game *game_load(const char *path) {
     }
     if (rd8(f) == 1) {                                                 /* optional: verb icons */
         rd(f, g->icons, sizeof g->icons);
-        for (int i = 0; i < 8; i++) for (int k = 0; k < 4; k++) g->slotpos[i][k] = (uint16_t)((rd8(f) << 8) | rd8(f));
+        for (int i = 0; i < 8; i++) for (int k = 0; k < 4; k++) { int hi = rd8(f), lo = rd8(f); g->slotpos[i][k] = (uint16_t)((hi << 8) | lo); }   /* explicit order: C leaves operand order unspecified */
         rd(f, g->verbtab, sizeof g->verbtab); g->has_icons = 1;
     }
     fclose(f);
@@ -256,7 +256,7 @@ static void build_verbs(Game *g) {
     if (g->target < 0 || !g->has_icons) return;
     const Obj *o = &r->objs[g->target]; const Sprite *s = &g->spr[o->slot]; int *v = g->verbs, n = 0;
     if ((s->c & 2) && !(o->xflags & 4)) v[n++] = 2;                                   /* take */
-    if (s->b17 && !(o->xflags & 0x40) && g->verbtab[s->b17 & 15] < 0x80) v[n++] = g->verbtab[s->b17 & 15];
+    if (s->b17 && !(o->xflags & 0x40) && g->verbtab[s->b17 & 15] < 20) v[n++] = g->verbtab[s->b17 & 15];
     if (s->b1d == 0x12) v[n++] = 0xe;
     if ((s->c & 1) && !(o->xflags & 4)) v[n++] = 0xa;
     if (s->b17 != 6 && !(s->b16 & 0x80)) v[n++] = 0xb;
@@ -416,6 +416,7 @@ void game_render(const Game *g, uint32_t *fb) {
         if (nm >= 0 && nm < g->ntext) draw_text(g, fb, g->text[nm], 229, 172, 84);
         if (g->has_icons) for (int i = 0; i < g->nverbs; i++) {                       /* verb icons in the six HUD slots */
             int ic = g->verbs[i], sx = g->slotpos[i][0], sy = g->slotpos[i][1];
+            if (ic < 0 || ic >= 20 || sx < 1 || sy < 1 || sx + 17 > SCREEN_W || sy + 15 > SCREEN_H) continue;
             const uint8_t *src = g->icons + ic * 112;
             for (int y = 0; y < 14; y++) for (int x = 0; x < 16; x++) {
                 int v = 0; for (int pl = 0; pl < 4; pl++) { int w = (src[pl * 28 + y * 2] << 8) | src[pl * 28 + y * 2 + 1]; v |= ((w >> (15 - x)) & 1) << pl; }
