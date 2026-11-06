@@ -38,7 +38,7 @@ struct Game {
     int facing, anim_t, moving;
     uint8_t font[46 * 24], fontmap[32]; char **text; int ntext; int day; int energy; int jump_t, jump_z0;
     int has_scroll; uint8_t scroll_tiles[18 * 32], scroll_map[0x30], font5[46 * 20]; int nexam, nuse; uint16_t exam_pid[512], exam_text[512], use_pid[512], use_text[512];   /* examine scroll */
-    int scroll_t; char scroll_str[256]; long score;
+    int scroll_t; char scroll_str[256]; long score; int map_open; uint8_t visited[100];
     int has_icons; uint8_t icons[20 * 112]; uint16_t slotpos[8][4]; uint8_t verbtab[16];
     int target, nverbs, verbs[8], menu, sel, prev_joy, msg, msg_t, ninv, inv[64];     /* verb menu state */
     uint16_t wallflag[MAX_WALLIDX]; int bump_timer;    /* wall-record flags, shared by the two rooms a wall joins */
@@ -369,7 +369,10 @@ static void hero_gravity(Game *g, Room *r) {
 void game_tick(Game *g, int joy) {
     Room *r = &g->rooms[g->cur]; Obj *h = &g->hero;
     int fire_edge = (joy & JOY_FIRE) && !(g->prev_joy & JOY_FIRE), new_dirs = (joy & 15) & ~(g->prev_joy & 15);
-    g->prev_joy = joy;
+    int prev = g->prev_joy; g->prev_joy = joy;
+    g->visited[g->cur] = 1;
+    if ((joy & JOY_MAP) && !(prev & JOY_MAP) && g->has_scroll) g->map_open ^= 1;                 /* F1: map of the rooms entered so far */
+    if (g->map_open) return;                                                                    /* the game waits while the map is up */
     if (g->scroll_t > 0) { g->scroll_t--; return; }
     if (g->msg_t > 0) g->msg_t--;
     if (g->menu) {                                                                     /* verb menu: the hero stands still */
@@ -486,8 +489,42 @@ static void scroll_tile(const Game *g, uint32_t *fb, int idx, int x0, int y0) {
         fb[Y * SCREEN_W + X] = g->pal[v][0] | g->pal[v][1] << 8 | g->pal[v][2] << 16 | 0xFF000000u;
     }
 }
+static void draw_panel(const Game *g, uint32_t *fb, int x0, int y0, int wt, int body) {
+    const uint8_t *T = g->scroll_map; int rowy = y0;
+    #define TROW(l, m, r) do { scroll_tile(g, fb, (l), x0, rowy); for (int k = 0; k < wt; k++) scroll_tile(g, fb, (m), x0 + 8 + 8 * k, rowy); scroll_tile(g, fb, (r), x0 + 8 + 8 * wt, rowy); rowy += 8; } while (0)
+    TROW(T[0], T[1], T[2]); TROW(T[3], T[4], T[5]);
+    for (int b = 0; b < body; b++) { unsigned h = (unsigned)(b * 2654435761u) >> 7; TROW(T[6 + (h & 7)], 0xd, T[14 + ((h >> 3) & 7)]); }
+    TROW(T[22], T[23], T[24]); TROW(T[25], T[26], T[27]);
+    #undef TROW
+}
+static void put5(const Game *g, uint32_t *fb, const char *s, int x, int y) {
+    for (const char *c = s; *c; c++, x += 6) {
+        int ch = (unsigned char)*c, gi; if (ch == ' ' || ch < 0x21) continue;
+        gi = ch >= 0x41 ? ch - 0x41 : g->fontmap[ch - 0x21]; if (gi >= 46) continue;
+        for (int row = 0; row < 5; row++) for (int col = 0; col < 8; col++) {
+            int v = 0; for (int p = 0; p < 4; p++) v |= ((g->font5[gi * 20 + row * 4 + p] >> (7 - col)) & 1) << p;
+            int X = x + col, Y = y + row; if (!v || X < 0 || X >= SCREEN_W || Y < 0 || Y >= SCREEN_H) continue;
+            fb[Y * SCREEN_W + X] = g->pal[v][0] | g->pal[v][1] << 8 | g->pal[v][2] << 16 | 0xFF000000u;
+        }
+    }
+}
+/* F1 map: 2 px per world cell, centred on the current room; entered rooms are outlined (current one in yellow). */
+static void draw_map(const Game *g, uint32_t *fb) {
+    draw_panel(g, fb, 96, 30, 14, 9);
+    const Room *cur = &g->rooms[g->cur]; int n = 0;
+    uint32_t dark = g->pal[5][0] | g->pal[5][1] << 8 | g->pal[5][2] << 16 | 0xFF000000u, bright = g->pal[10][0] | g->pal[10][1] << 8 | g->pal[10][2] << 16 | 0xFF000000u;
+    for (int pass = 0; pass < 2; pass++) for (int i = 0; i < 100; i++) {
+        const Room *r = &g->rooms[i]; if (!r->valid || !g->visited[i] || (i == g->cur) != (pass == 1)) continue;
+        if (!pass) n++; else n++;
+        int x = 160 + 2 * r->x0 - (2 * cur->x0 + cur->sx), y = 78 + 2 * r->y0 - (2 * cur->y0 + cur->sy), w = 2 * r->sx, h = 2 * r->sy;
+        uint32_t col = pass ? bright : dark;
+        for (int k = 0; k <= w; k++) for (int e = 0; e < 2; e++) { int X = x + k, Y = y + (e ? h : 0); if (X >= 104 && X < 216 && Y >= 38 && Y < 126) fb[Y * SCREEN_W + X] = col; }
+        for (int k = 0; k <= h; k++) for (int e = 0; e < 2; e++) { int X = x + (e ? w : 0), Y = y + k; if (X >= 104 && X < 216 && Y >= 38 && Y < 126) fb[Y * SCREEN_W + X] = col; }
+    }
+    char buf[64]; snprintf(buf, sizeof buf, "%s%d", g->ntext > 42 ? g->text[42] : "ROOMS ENTERED ", n); put5(g, fb, buf, 107, 116);
+}
 static void draw_scroll(const Game *g, uint32_t *fb) {
-    const uint8_t *T = g->scroll_map; const char *str = g->scroll_str; int len = (int)strlen(str);
+    const char *str = g->scroll_str; int len = (int)strlen(str);
     int maxw = 12, d0 = len - 48; if (d0 >= 0) { do { maxw++; d0 -= maxw; } while (d0 > 0); }        /* chars per line grows with the text */
     char lines[16][48]; int nl = 0;
     for (const char *p = str; *p && nl < 16;) {
@@ -503,12 +540,7 @@ static void draw_scroll(const Game *g, uint32_t *fb) {
         p += best; if (*p == ' ') p++;
     }
     int wt = maxw * 6 / 8, body = nl * 6 / 8, x0 = 32, y0 = 20, W = (wt + 2) * 8;
-    int rowy = y0;
-    #define TROW(l, m, r) do { scroll_tile(g, fb, (l), x0, rowy); for (int k = 0; k < wt; k++) scroll_tile(g, fb, (m), x0 + 8 + 8 * k, rowy); scroll_tile(g, fb, (r), x0 + 8 + 8 * wt, rowy); rowy += 8; } while (0)
-    TROW(T[0], T[1], T[2]); TROW(T[3], T[4], T[5]);
-    for (int b = 0; b < body; b++) { unsigned h = (unsigned)(b * 2654435761u) >> 7; TROW(T[6 + (h & 7)], 0xd, T[14 + ((h >> 3) & 7)]); }
-    TROW(T[22], T[23], T[24]); TROW(T[25], T[26], T[27]);
-    #undef TROW
+    draw_panel(g, fb, x0, y0, wt, body);
     for (int l = 0; l < nl; l++) {
         int x = x0 + (W - (int)strlen(lines[l]) * 6) / 2, y = y0 + 13 + 6 * l;
         for (const char *c = lines[l]; *c; c++, x += 6) {
@@ -607,6 +639,7 @@ void game_render(const Game *g, uint32_t *fb) {
     }
     if (g->hud) draw_energy(g, fb);
     if (g->scroll_t > 0) draw_scroll(g, fb);
+    if (g->map_open && g->has_scroll) draw_map(g, fb);
 }
 
 /* Debug aid for the headless driver: put the hero somewhere. */
