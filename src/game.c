@@ -42,7 +42,7 @@ struct Game {
     int scroll_t; char scroll_str[256]; long score; int map_open, map_px, map_py, status_open; long gold, xp, level; uint8_t visited[100];
     int has_icons; uint8_t icons[20 * 112]; uint16_t slotpos[8][4]; uint8_t verbtab[16];
     int target, nverbs, verbs[8], menu, sel, prev_joy, msg, msg_t, ninv, inv[64];     /* verb menu state */
-    uint16_t wallflag[MAX_WALLIDX]; int bump_timer;    /* wall-record flags, shared by the two rooms a wall joins */
+    uint16_t wallflag[MAX_WALLIDX]; uint8_t walldoor[MAX_WALLIDX]; int bump_timer;    /* wall-record flags, shared by the two rooms a wall joins */
     unsigned tickno; int walk_ticks, walk_step, start_room; Obj start_hero;
     Sfx sfx[65]; Voice voice[4];
     uint8_t *hud;                      /* 320*200*4 bottom panel frame, or NULL */
@@ -85,7 +85,7 @@ Game *game_load(const char *path) {
             Wall *w = &r->walls[k]; w->x = rds16(f); w->y = rds16(f); w->orient = rd8(f);
             for (int b = 0; b < 4; b++) w->box[b] = rds16(f);
             w->slot = rd16(f); w->z = rd8(f); w->wx = rds16(f); w->wy = rds16(f);
-            w->idx = rd16(f); w->flags = rd16(f); w->b7 = rd8(f); if (w->idx < MAX_WALLIDX) g->wallflag[w->idx] = (uint16_t)w->flags;
+            w->idx = rd16(f); w->flags = rd16(f); w->b7 = rd8(f); if (w->idx < MAX_WALLIDX) { g->wallflag[w->idx] = (uint16_t)w->flags; if (w->flags) g->walldoor[w->idx] = 1; }
         }
         int no = rd16(f); r->objs = calloc(no ? no : 1, sizeof(Obj)); r->nobj = 0;
         for (int k = 0; k < no; k++) {
@@ -282,7 +282,7 @@ static void run_script(Game *g, Obj *self, const uint8_t *c, int len) {
             }
             break; }
         case 0x0f: return;
-        case 0x1b: { int w = c[p++]; int v = (c[p] << 8) | c[p + 1]; p += 2; if (w < MAX_WALLIDX) g->wallflag[w] = (uint16_t)v; break; }
+        case 0x1b: { int w = c[p++]; int v = (c[p] << 8) | c[p + 1]; p += 2; if (w < MAX_WALLIDX) g->wallflag[w] = (uint16_t)v; if (v) g->walldoor[w] = 1; break; }
         case 0x0a: { int w = c[p++]; if (w < MAX_WALLIDX && g->wallflag[w]) { g->wallflag[w] = 0; play_sound(g, 0x12); } break; }
         case 0x1f: self->flags &= ~1; break;
         case 0x20: self->flags |= 1; break;
@@ -659,7 +659,7 @@ void game_render(const Game *g, uint32_t *fb) {
     }
     for (int i = 0; i < r->nwalls && n < 255; i++) {
         const Wall *w = &r->walls[i]; const Sprite *s = &g->spr[w->slot];
-        if (s->state == 1 && s->h > 1 && wall_closed(g, w)) items[n++] = (DrawItem){ w->wx + s->fx + w->wy + s->fy - 2, w->wx + s->fx - 1, w->wy + s->fy - 1, (w->z - r->basez) * 16, w->slot, 0, {0}, 0 };
+        if (s->state == 1 && s->h > 1 && (wall_closed(g, w) || (w->idx < MAX_WALLIDX && g->walldoor[w->idx]))) items[n++] = (DrawItem){ w->wx + s->fx + w->wy + s->fy - 2, w->wx + s->fx - 1, w->wy + s->fy - 1, (w->z - r->basez) * 16, w->slot, 0, {0}, 0 };
     }
     items[n++] = (DrawItem){ g->hero.x + g->hero.y, g->hero.x, g->hero.y, g->hero.z, 8, 1, box_of(g, &g->hero), 1 };
     qsort(items, n, sizeof items[0], cmp_item);
