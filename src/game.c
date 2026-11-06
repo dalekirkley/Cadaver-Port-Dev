@@ -280,6 +280,7 @@ static void exec_verb(Game *g, int verb) {
     if (g->target < 0) return;
     if (verb == 2 && g->ninv < 64) {                                                 /* take: the object goes to the rucksack */
         g->inv[g->ninv++] = r->objs[g->target].pid;
+        if (g->spr[r->objs[g->target].slot].name >= 0) say(g, g->spr[r->objs[g->target].slot].name);   /* original prints the item name */
         memmove(&r->objs[g->target], &r->objs[g->target + 1], (size_t)(r->nobj - g->target - 1) * sizeof(Obj)); r->nobj--;
         g->target = -1; g->nverbs = 0; return;
     }
