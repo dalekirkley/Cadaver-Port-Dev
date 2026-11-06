@@ -218,7 +218,7 @@ static int hero_frame(const Game *g) {
     else if (f & JOY_LEFT) { a = walk_left; idle_frame = 21; }
     else if (f & JOY_DOWN) { a = walk_down; idle_frame = 26; }
     else { a = walk_up; idle_frame = 31; }
-    return g->moving ? a[(g->anim_t / 1) & 3] : idle_frame;
+    return g->moving ? a[(g->anim_t / 2) & 3] : idle_frame;
 }
 
 void game_render(const Game *g, uint32_t *fb) {
