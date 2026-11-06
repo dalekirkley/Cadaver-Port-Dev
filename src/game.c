@@ -165,7 +165,8 @@ static int overlap(Box a, Box b) {
     return !(a.x1 < b.x0 || b.x1 < a.x0 || a.y1 < b.y0 || b.y1 < a.y0 || a.z1 < b.z0 || b.z1 < a.z0);
 }
 static int flat(const Game *g, const Obj *o) { const Sprite *s = &g->spr[o->slot]; return o->slot != 8 && !s->push && s->fz <= 2; }   /* floor decals: walk-over, drawn under everything */
-static int pushable(const Game *g, const Obj *o) { return o->slot != 8 && g->spr[o->slot].push != 0; }
+/* Walking pushes only light objects (type byte +$c bit 1, the TAKE bit); bit 0 alone = heavy furniture (altars, pillars) that only the MOVE verb could shift. */
+static int pushable(const Game *g, const Obj *o) { return o->slot != 8 && (g->spr[o->slot].push & 2) != 0; }
 
 /* Try to move o by (dx,dy); every overlapping object must itself be pushable and movable. */
 static int try_move(Game *g, Room *r, Obj *o, int dx, int dy, int depth) {
