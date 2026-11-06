@@ -87,6 +87,7 @@ for y in range(115,200):
 # Straight diagonal edge: fit one line per side through the decoration outline (last/first coloured pixel of every row), push it
 # outwards by ~6 px (the original keeps about that much black; the nearest room pixel in its frames is 10 px away) and fill solid black
 # between the outline and that line.
+RIGHT_M=int(__import__("os").environ.get("RIGHT_M","8"))
 for part in (1,2):
     pts=[]
     for y in range(115,200):
@@ -95,7 +96,7 @@ for part in (1,2):
     ys=np.array([p[0] for p in pts],float);xs_=np.array([p[1] for p in pts],float)
     k,c=np.polyfit(ys,xs_,1)
     c+=(xs_-(k*ys+c)).max() if part==1 else (xs_-(k*ys+c)).min()      # line just touching the outermost outline pixel
-    c+=6 if part==1 else -6
+    c+=6 if part==1 else RIGHT_M
     for y,edge in zip(pts,[k*p[0]+c for p in pts]):
         yy=y[0];x_out=y[1]
         rng=range(x_out+1,min(int(np.ceil(edge))+1,320)) if part==1 else range(max(int(np.floor(edge)),0),x_out)
