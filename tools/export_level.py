@@ -143,4 +143,17 @@ for i in range(L.g6.n):
 P('B',1);o+=bytes(L.game[0x464a-0xb8:0x464a-0xb8+18*32]);o+=bytes(L.game[0x55e8-0xb8:0x55e8-0xb8+0x30]);o+=bytes(L.game[0x488a-0xb8:0x488a-0xb8+46*20])
 P('H',len(exam))
 for pid,tx in exam:P('HH',pid,tx)
+# event-5 message scripts (the USE verb): (placement id, text id) for blocks `05|85 1c tt tt`
+use=[]
+for i in range(L.g6.n):
+    e=L.g6.rec(i)
+    if len(e)<0x11 or not e[0x0b]:continue
+    p=0x10
+    for _ in range(e[0x0b]):
+        if p>=len(e) or not e[p]:break
+        ln=e[p]
+        if e[p+1]&0x7f==5 and ln>=6 and e[p+2]==0x1c and i not in [x[0] for x in use]:use.append((i,(e[p+3]<<8)|e[p+4]))
+        p+=ln
+P('H',len(use))
+for pid,tx in use:P('HH',pid,tx)
 open(out,'wb').write(o);print(len(o),'bytes,',len(exam),'examine texts')

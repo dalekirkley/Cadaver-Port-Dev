@@ -37,7 +37,7 @@ struct Game {
     Obj hero;                         /* hero.slot = 8 */
     int facing, anim_t, moving;
     uint8_t font[46 * 24], fontmap[32]; char **text; int ntext; int day; int energy; int jump_t, jump_z0;
-    int has_scroll; uint8_t scroll_tiles[18 * 32], scroll_map[0x30], font5[46 * 20]; int nexam; uint16_t exam_pid[512], exam_text[512];   /* examine scroll */
+    int has_scroll; uint8_t scroll_tiles[18 * 32], scroll_map[0x30], font5[46 * 20]; int nexam, nuse; uint16_t exam_pid[512], exam_text[512], use_pid[512], use_text[512];   /* examine scroll */
     int scroll_t; char scroll_str[256]; long score;
     int has_icons; uint8_t icons[20 * 112]; uint16_t slotpos[8][4]; uint8_t verbtab[16];
     int target, nverbs, verbs[8], menu, sel, prev_joy, msg, msg_t, ninv, inv[64];     /* verb menu state */
@@ -115,6 +115,8 @@ Game *game_load(const char *path) {
         rd(f, g->scroll_tiles, sizeof g->scroll_tiles); rd(f, g->scroll_map, sizeof g->scroll_map); rd(f, g->font5, sizeof g->font5);
         g->nexam = rd16(f); if (g->nexam > 512) g->nexam = 512;
         for (int i = 0; i < g->nexam; i++) { g->exam_pid[i] = (uint16_t)rd16(f); g->exam_text[i] = (uint16_t)rd16(f); }
+        g->nuse = rd16(f); if (g->nuse < 0 || g->nuse > 512) g->nuse = 0;
+        for (int i = 0; i < g->nuse; i++) { g->use_pid[i] = (uint16_t)rd16(f); g->use_text[i] = (uint16_t)rd16(f); }
         g->has_scroll = 1;
     }
     fclose(f);
@@ -301,6 +303,12 @@ static void exec_verb(Game *g, int verb) {
         int pid = r->objs[g->target].pid;
         for (int i = 0; i < g->nexam; i++) if (g->exam_pid[i] == pid && g->exam_text[i] < g->ntext && g->text[g->exam_text[i]][0]) {
             snprintf(g->scroll_str, sizeof g->scroll_str, "%s.", g->text[g->exam_text[i]]); g->scroll_t = SCROLL_TICKS; return;
+        }
+    }
+    if (verb == 6 && g->has_scroll) {                                                 /* use: event 5 message scripts (inscriptions, switches) */
+        int pid = r->objs[g->target].pid;
+        for (int i = 0; i < g->nuse; i++) if (g->use_pid[i] == pid && g->use_text[i] < g->ntext && g->text[g->use_text[i]][0]) {
+            snprintf(g->scroll_str, sizeof g->scroll_str, "%s", g->text[g->use_text[i]]); g->scroll_t = SCROLL_TICKS; return;
         }
     }
     say(g, 4);                                                                        /* "NOTHING HAPPENS" until the other verbs exist */
