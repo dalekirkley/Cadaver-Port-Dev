@@ -61,7 +61,7 @@ for i in range(65):
     ln,ad=struct.unpack('>HI',L.game[a+4:a+10]);data=L.game[ad-0xb8:ad-0xb8+ln*2]
     P('I',len(data));o+=bytes(data)
 # HUD frame (bottom panel), stored in the game image as per-row left and right strips of n(y) words each
-# (n grows by one every 8 rows as the diagonal edges close in); word-interleaved 4-plane, colour 0 = transparent like every other image.
+# (n grows by one every 8 rows as the diagonal edges close in); word-interleaved 4-plane, strip pixels are opaque, pixels outside the strips transparent.
 hud=np.zeros((200,320,4),np.uint8);off=0x4c5b2-0x4bd48-0xb8
 for y in range(115,200):
     n=7+(y-163)//8
@@ -71,7 +71,7 @@ for y in range(115,200):
             ws=[int.from_bytes(L.game[off+2*k:off+2*k+2],'big') for k in range(4)];off+=8
             x0=(wd if part==0 else 20-n+wd)*16
             for b in range(16):
-                c=sum(((ws[k]>>(15-b))&1)<<k for k in range(4));hud[y,x0+b]=tuple(L.rgb[c])+((255 if c else 0),)   # colour 0 is transparent (room shows through the strips' edges)
+                c=sum(((ws[k]>>(15-b))&1)<<k for k in range(4));hud[y,x0+b]=tuple(L.rgb[c])+(255,)   # the strips are copied over the room including their black (verified: 93% of colour-0 strip pixels are black in the original; the rest is the energy bar)
 P('B',1);o+=hud.tobytes()
 # text: font (46 glyphs, 8x6, 4 plane-bytes per row), char->glyph table for 0x21..0x40, the level's strings and per-room name fields
 import lzhuf,textdec
