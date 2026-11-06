@@ -229,6 +229,7 @@ static int try_exit(Game *g, int dx, int dy) {
         if (dy == 0 && dx > 0 && w->box[0] < r->sx * 4) continue;
         if (dy != 0) { if (!(w->box[0] <= nx - HERO_FX + 1 && nx <= w->box[2])) continue; }
         else         { if (!(w->box[1] <= ny - HERO_FY + 1 && ny <= w->box[3])) continue; }
+        { int level = (w->z - r->basez) * 16; if (h->z < level || h->z >= level + 32) continue; }   /* the exit sits at its own height: stairs lead up to it */
         int n = neighbour(g, w->x, w->y, w->orient != 0); if (n < 0) continue;
         if (wall_closed(g, w) && w->idx < MAX_WALLIDX && g->wallflag[w->idx] != 0xffff) {
             int key = g->wallflag[w->idx];                        /* locked door: the key item's placement id is the flag value */
@@ -299,6 +300,34 @@ static int move_sel(const Game *g, int dirs) {
     return best;
 }
 
+/* Step-up onto a low object (original $6b44: type bit 3, climb under $14 units): retry the move with the hero raised to the top. */
+static int try_step_up(Game *g, Room *r, int dx, int dy) {
+    Obj *h = &g->hero; Obj ghost = *h; ghost.x += dx; ghost.y += dy;
+    Box gb = box_of(g, &ghost); int top = -1;
+    for (int i = 0; i < r->nobj; i++) {
+        Obj *q = &r->objs[i]; if (flat(g, q)) continue;
+        Box qb = box_of(g, q); if (!overlap(gb, qb)) continue;
+        if (pushable(g, q) || !(g->spr[q->slot].c & 8)) return 0;
+        if (qb.z1 + 1 > top) top = qb.z1 + 1;
+    }
+    if (top < 0 || top - h->z >= 0x14) return 0;
+    ghost.z = top; gb = box_of(g, &ghost);
+    for (int i = 0; i < r->nobj; i++) { Obj *q = &r->objs[i]; if (!flat(g, q) && overlap(gb, box_of(g, q))) return 0; }
+    h->x = ghost.x; h->y = ghost.y; h->z = top; return 1;
+}
+
+/* Gravity: the hero rests on the highest object top under his feet (or the floor) and drops a few units per tick. */
+static void hero_gravity(Game *g, Room *r) {
+    Obj *h = &g->hero; Box hb = box_of(g, h); int rest = 0;
+    for (int i = 0; i < r->nobj; i++) {
+        Obj *q = &r->objs[i]; if (flat(g, q)) continue;
+        Box qb = box_of(g, q);
+        if (qb.x1 < hb.x0 || hb.x1 < qb.x0 || qb.y1 < hb.y0 || hb.y1 < qb.y0) continue;
+        if (qb.z1 + 1 <= h->z && qb.z1 + 1 > rest) rest = qb.z1 + 1;
+    }
+    if (h->z > rest) { h->z -= 4; if (h->z < rest) h->z = rest; }
+}
+
 void game_tick(Game *g, int joy) {
     Room *r = &g->rooms[g->cur]; Obj *h = &g->hero;
     int fire_edge = (joy & JOY_FIRE) && !(g->prev_joy & JOY_FIRE), new_dirs = (joy & 15) & ~(g->prev_joy & 15);
@@ -317,9 +346,10 @@ void game_tick(Game *g, int joy) {
         if (!try_move(g, r, h, dx, dy, 0)) {
             int nx = h->x + dx, ny = h->y + dy;
             int out = nx >= r->sx * 8 || ny >= r->sy * 8 || nx - HERO_FX + 1 < MARGIN || ny - HERO_FY + 1 < MARGIN;
-            if (out) try_exit(g, dx, dy);
+            if (out) try_exit(g, dx, dy); else try_step_up(g, r, dx, dy);
         }
     }
+    hero_gravity(g, r);
     /* Walking animation + footsteps, timed from an emulator trace of the original: each of the 4 walk frames is shown
        for 3 logic ticks; a footstep (sample 22, period 320, volume 8, cut after 4 video frames = 80 ms) sounds when the
        script reaches its 2nd and 4th frame (the `$fc 00` entries of the walk scripts). */
@@ -454,3 +484,6 @@ void game_render(const Game *g, uint32_t *fb) {
         }   /* measured against the original: 3 px right of the nominal box */
     }
 }
+
+/* Debug aid for the headless driver: put the hero somewhere. */
+void game_warp(Game *g, int room, int x, int y, int z) { if (room >= 0 && room < 100 && g->rooms[room].valid) { g->cur = room; g->hero.x = x; g->hero.y = y; g->hero.z = z; } }

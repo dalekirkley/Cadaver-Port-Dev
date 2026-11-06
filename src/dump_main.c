@@ -13,6 +13,7 @@ static void ppm(const char *path, const uint32_t *fb) {
 int main(int argc, char **argv) {
     if (argc < 4) { fprintf(stderr, "usage: dump level.bin script prefix\n"); return 1; }
     Game *g = game_load(argv[1]); if (!g) { fprintf(stderr, "load failed\n"); return 1; }
+    { const char *e = getenv("WARP"); int a, b, c, d; if (e && sscanf(e, "%d,%d,%d,%d", &a, &b, &c, &d) == 4) game_warp(g, a, b, c, d); }   /* WARP=room,x,y,z */
     char *s = strdup(argv[2]); char *tok = strtok(s, ",");
     while (tok) {
         int joy = 0; char *p = tok;
