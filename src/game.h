@@ -19,6 +19,8 @@ Game *game_load(const char *path);          /* returns NULL on error */
 void game_free(Game *g);
 void game_tick(Game *g, int joy);            /* one 25 Hz logic step */
 void game_render(const Game *g, uint32_t *rgba_out); /* 320x200, 0xAABBGGRR little endian = R,G,B,A bytes */
+/* Mix mono signed 16-bit audio at `rate` Hz (call from the audio thread / pump). */
+void game_audio_mix(Game *g, int16_t *out, int n, int rate);
 int game_room(const Game *g);
 void game_hero(const Game *g, int *x, int *y, int *z);
 #endif

@@ -1,9 +1,9 @@
 """LZHUF (Okumura/Yoshizaki) decoder, as used by Cadaver's level data (big-endian length header)."""
-import struct
+import struct,os
 N,F,TH=4096,60,2
 NCHAR=256-TH+F; T=NCHAR*2-1; R=T-1; MAXF=0x8000
 def load_tables():
-    g=open('game2_blob.bin','rb').read()
+    g=open(os.environ.get('CADAVER_GAME_IMAGE','game2_blob.bin'),'rb').read()
     return g[0x117f6-0xb8:0x117f6-0xb8+256], g[0x118f6-0xb8:0x118f6-0xb8+256]
 D_CODE,D_LEN=load_tables()
 def decode(data, off=0):

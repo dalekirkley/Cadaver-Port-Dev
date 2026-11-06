@@ -14,6 +14,24 @@ static BITMAPINFO bmi;
 static uint32_t fb[SCREEN_W * SCREEN_H];
 static uint32_t bgra[SCREEN_W * SCREEN_H];
 static int running = 1;
+#define AUDIO_RATE 22050
+#define ABUF 8
+#define ASAMPLES 441
+static HWAVEOUT wo; static WAVEHDR whdr[ABUF]; static short abuf[ABUF][ASAMPLES]; static int have_audio;
+static void audio_init(void) {
+    WAVEFORMATEX fmt = {0}; fmt.wFormatTag = WAVE_FORMAT_PCM; fmt.nChannels = 1; fmt.nSamplesPerSec = AUDIO_RATE;
+    fmt.wBitsPerSample = 16; fmt.nBlockAlign = 2; fmt.nAvgBytesPerSec = AUDIO_RATE * 2;
+    if (waveOutOpen(&wo, WAVE_MAPPER, &fmt, 0, 0, CALLBACK_NULL) != MMSYSERR_NOERROR) return;
+    have_audio = 1;
+    for (int i = 0; i < ABUF; i++) { whdr[i].lpData = (LPSTR)abuf[i]; whdr[i].dwBufferLength = sizeof abuf[i]; waveOutPrepareHeader(wo, &whdr[i], sizeof whdr[i]); whdr[i].dwFlags |= WHDR_DONE; }
+}
+static void audio_pump(Game *g) {
+    if (!have_audio) return;
+    for (int i = 0; i < ABUF; i++) if (whdr[i].dwFlags & WHDR_DONE) {
+        game_audio_mix(g, abuf[i], ASAMPLES, AUDIO_RATE);
+        whdr[i].dwFlags &= ~WHDR_DONE; waveOutWrite(wo, &whdr[i], sizeof whdr[i]);
+    }
+}
 
 static int read_joy(void) {
     int j = 0;
@@ -50,7 +68,7 @@ int WINAPI WinMain(HINSTANCE hi, HINSTANCE hp, LPSTR cmd, int show) {
     HWND hw = CreateWindowA("CadaverNative", "Cadaver (native)", WS_OVERLAPPEDWINDOW | WS_VISIBLE, CW_USEDEFAULT, CW_USEDEFAULT, r.right - r.left, r.bottom - r.top, NULL, NULL, hi, NULL);
     bmi.bmiHeader.biSize = sizeof bmi.bmiHeader; bmi.bmiHeader.biWidth = SCREEN_W; bmi.bmiHeader.biHeight = -SCREEN_H;
     bmi.bmiHeader.biPlanes = 1; bmi.bmiHeader.biBitCount = 32; bmi.bmiHeader.biCompression = BI_RGB;
-    timeBeginPeriod(1);
+    timeBeginPeriod(1); audio_init();
     LARGE_INTEGER fq, t0; QueryPerformanceFrequency(&fq); QueryPerformanceCounter(&t0);
     double next = 0, tick = 1.0 / TICK_HZ;
     while (running) {
@@ -59,6 +77,7 @@ int WINAPI WinMain(HINSTANCE hi, HINSTANCE hp, LPSTR cmd, int show) {
         int steps = 0;
         while (t >= next && steps < 5) { game_tick(g, read_joy()); next += tick; steps++; }
         if (steps > 4) next = t;
+        audio_pump(g);
         game_render(g, fb);
         for (int i = 0; i < SCREEN_W * SCREEN_H; i++) { uint32_t v = fb[i]; bgra[i] = (v & 0xFF) << 16 | (v & 0xFF00) | (v >> 16 & 0xFF); }
         InvalidateRect(hw, NULL, FALSE); UpdateWindow(hw);

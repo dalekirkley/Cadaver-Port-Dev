@@ -10,6 +10,8 @@
 #define HERO_FZ 30
 #define MAX_PUSH_DEPTH 0x1f
 
+typedef struct { int len; int8_t *data; } Sfx;
+typedef struct { int sfx; double pos, step; int vol; } Voice;
 typedef struct { int state, w, h; int16_t f[5]; int push; int16_t fx, fy, fz; uint8_t *px; } Sprite;
 typedef struct { int16_t hx, hy; int w, h; uint8_t *px; } Frame;
 typedef struct { int x, y, z, slot, flags, pid; } Obj;       /* x,y = max corner, inclusive box */
@@ -31,6 +33,7 @@ struct Game {
     Obj hero;                         /* hero.slot = 8 */
     int facing, anim_t, moving;
     unsigned tickno;
+    Sfx sfx[65]; Voice voice[4];
 };
 
 /* ------------------------------------------------------------------ loading */
@@ -78,6 +81,11 @@ Game *game_load(const char *path) {
             r->objs[r->nobj++] = o;
         }
     }
+    { uint32_t nsfx = rd32(f);                 /* optional: sound effect pool (absent in old data files) */
+      for (uint32_t i = 0; i < nsfx && i < 65; i++) {
+          g->sfx[i].len = (int)rd32(f); g->sfx[i].data = malloc(g->sfx[i].len ? g->sfx[i].len : 1);
+          rd(f, g->sfx[i].data, g->sfx[i].len);
+      } }
     fclose(f);
     g->cur = 0; g->hero.x += 1;                                /* level start nudges the hero +1 in x */
     g->facing = JOY_RIGHT;
@@ -89,11 +97,34 @@ void game_free(Game *g) {
     for (int s = 0; s < 255; s++) free(g->spr[s].px);
     for (int n = 0; n < g->nframes; n++) free(g->frames[n].px);
     for (int n = 0; n < 100; n++) { free(g->rooms[n].bg); free(g->rooms[n].walls); free(g->rooms[n].objs); }
+    for (int i = 0; i < 65; i++) free(g->sfx[i].data);
     free(g->frames); free(g);
 }
 
 int game_room(const Game *g) { return g->cur; }
 void game_hero(const Game *g, int *x, int *y, int *z) { *x = g->hero.x; *y = g->hero.y; *z = g->hero.z; }
+
+/* ---------------------------------------------------------------- sound */
+/* Original Paula clock: 3546895 / period = sample rate. Footstep (sound 0) period not yet decoded: 320 is a guess. */
+static void play_sound(Game *g, int id, int period, int vol) {
+    if (id < 0 || id >= 65 || !g->sfx[id].len) return;
+    int v = 0; for (int i = 0; i < 4; i++) if (!g->voice[i].step) { v = i; break; }
+    g->voice[v].sfx = id; g->voice[v].pos = 0; g->voice[v].step = 3546895.0 / period; g->voice[v].vol = vol;
+}
+
+void game_audio_mix(Game *g, int16_t *out, int n, int rate) {
+    for (int i = 0; i < n; i++) {
+        int acc = 0;
+        for (int v = 0; v < 4; v++) {
+            Voice *vo = &g->voice[v]; if (!vo->step) continue;
+            const Sfx *s = &g->sfx[vo->sfx]; int p = (int)vo->pos;
+            if (p >= s->len) { vo->step = 0; continue; }
+            acc += s->data[p] * vo->vol; vo->pos += vo->step / rate;
+        }
+        acc = acc * 2; if (acc > 32767) acc = 32767; if (acc < -32768) acc = -32768;
+        out[i] = (int16_t)acc;
+    }
+}
 
 /* ---------------------------------------------------------------- collision */
 typedef struct { int x0, y0, x1, y1, z0, z1; } Box;
@@ -177,6 +208,7 @@ void game_tick(Game *g, int joy) {
             if (out) try_exit(g, dx, dy);
         }
     }
+    if (g->moving && g->anim_t % 2 == 0 && ((g->anim_t / 2) & 1)) play_sound(g, 0, 320, 24);   /* footstep: after frames 0 and 2 */
     g->anim_t++;
 }
 

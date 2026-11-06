@@ -1,6 +1,7 @@
 """Export one Cadaver level to a flat binary the native game reads (little endian).
 usage: python3 export_level.py <disk2.adf> <game_blob.bin> <level> <out.bin>"""
-import sys,struct,glob
+import sys,struct,glob,os
+if len(sys.argv)>2:os.environ['CADAVER_GAME_IMAGE']=sys.argv[2]
 sys.path.insert(0,__import__('os').path.dirname(__import__('os').path.abspath(__file__)))
 import numpy as np
 import bank
@@ -42,4 +43,10 @@ for n in range(100):
     lst=L.g5.rec(n);ids=[u16(lst,k) for k in range(0,len(lst),2)];P('H',len(ids))
     for pid in ids:
         p=L.g6.rec(pid);P('HBBBBH',pid,p[0],p[1],p[2],p[3],u16(p,6))
+# sound effects: 65 records at $3763c (14 bytes: i16 flag, u16 ?, u16 len_words, u32 addr, u32 loop) -> raw signed 8-bit samples
+P('I',65)
+for i in range(65):
+    a=0x3763c-0xb8+14*i
+    ln,ad=struct.unpack('>HI',L.game[a+4:a+10]);data=L.game[ad-0xb8:ad-0xb8+ln*2]
+    P('I',len(data));o+=bytes(data)
 open(out,'wb').write(o);print(len(o),'bytes')
