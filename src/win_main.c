@@ -14,7 +14,7 @@ static BITMAPINFO bmi;
 static uint32_t fb[SCREEN_W * SCREEN_H];
 static uint32_t bgra[SCREEN_W * SCREEN_H];
 static int running = 1;
-static int pending_level = 0;   /* F1..F5 = load data\\levelN.bin */
+static int pending_level = 0;   /* F6..F10 = load data\\levelN.bin */
 #define AUDIO_RATE 22050
 #define ABUF 8
 #define ASAMPLES 441
@@ -50,7 +50,7 @@ static LRESULT CALLBACK wndproc(HWND h, UINT m, WPARAM w, LPARAM l) {
     case WM_DESTROY: running = 0; PostQuitMessage(0); return 0;
     case WM_KEYDOWN:
         if (w == VK_ESCAPE) { running = 0; PostQuitMessage(0); }
-        if (w >= VK_F1 && w <= VK_F5) pending_level = (int)(w - VK_F1) + 1;
+        if (w >= VK_F6 && w <= VK_F10) pending_level = (int)(w - VK_F6) + 1;   /* debug level switch; F1 stays free for the map */
         return 0;
     case WM_ERASEBKGND: return 1;
     case WM_PAINT: {
