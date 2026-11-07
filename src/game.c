@@ -306,7 +306,8 @@ static void vm_op(Vm *m, int op) {
             m->cond = 0; m->p++; vm_block(m);
             if (!m->stop && m->p < m->len && m->c[m->p] == 0x0f) { m->p++; m->p += m->c[m->p]; }
         } else {
-            m->cond = 0; int l = m->c[m->p]; m->p += l;
+            m->cond = 0; int l = m->c[m->p]; int p0 = m->p; m->p += l;
+            if (g->dbg_ntr < 40) { g->dbg_tr[g->dbg_ntr++] = 0xf0; g->dbg_tr[g->dbg_ntr++] = (unsigned char)l; g->dbg_tr[g->dbg_ntr++] = 0xf1; g->dbg_tr[g->dbg_ntr++] = (unsigned char)p0; g->dbg_tr[g->dbg_ntr++] = 0xf2; g->dbg_tr[g->dbg_ntr++] = (unsigned char)m->p; g->dbg_tr[g->dbg_ntr++] = 0xf3; g->dbg_tr[g->dbg_ntr++] = (unsigned char)(m->p < m->len ? m->c[m->p] : 0xee); g->dbg_tr[g->dbg_ntr++] = 0xf4; g->dbg_tr[g->dbg_ntr++] = (unsigned char)m->len; }
             if (m->p < m->len && m->c[m->p] == 0x0f) { m->p += 2; vm_block(m); }
         }
         break; }
