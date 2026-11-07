@@ -333,10 +333,24 @@ static void vm_op(Vm *m, int op) {
             for (int i = 0; i < r2->nobj; i++) if (r2->objs[i].pid == id) { o2 = r2->objs[i]; r2->objs[i] = r2->objs[--r2->nobj]; got = 1; break; } }
         if (!got) return;
         o2.flags &= ~0x80; o2.x = x; o2.y = y; o2.z = z; o2.anim = 8; o2.atick = 8; o2.stage = 0; cr->objs[cr->nobj++] = o2; break; }
-    case 0x25: { int n = m->c[m->p], dx = m->c[m->p + 1], dy = m->c[m->p + 2], dz = m->c[m->p + 3]; m->p += 4;   /* create an object next to the target ($10546) */
-        Room *rr = &g->rooms[g->cur]; Obj no2; memset(&no2, 0, sizeof no2);
-        no2.slot = n; no2.x = m->self->x + dx; no2.y = m->self->y + dy; no2.z = m->self->z + dz; no2.pid = 1000 + g->spawn_pid++;
-        rr->objs[rr->nobj++] = no2; break; }
+    case 0x25: { int n = m->c[m->p], dx = m->c[m->p + 1], dy = m->c[m->p + 2], dz = m->c[m->p + 3]; m->p += 4;   /* teleport the hero into room n at an offset from its origin ($10546) */
+        if (n < 100 && g->rooms[n].valid) { g->cur = n; g->hero.x = MARGIN + HERO_FX + dx; g->hero.y = MARGIN + HERO_FY + dy; g->hero.z = dz; }
+        break; }
+    case 0x29: { int id = vm_word(m); int rm = m->c[m->p], x = m->c[m->p + 1], y = m->c[m->p + 2], z = m->c[m->p + 3]; m->p += 4;   /* move an object (or rucksack item) to room rm ($10668) */
+        Obj o2; int got = 0;
+        for (int i = 0; i < g->ninv && !got; i++) if (g->inv[i] == id) {
+            memset(&o2, 0, sizeof o2); o2.pid = id; o2.slot = g->inv_slot[i];
+            if (g->inv_hold == id) g->inv_hold = -1;
+            memmove(&g->inv[i], &g->inv[i + 1], (size_t)(g->ninv - i - 1) * sizeof(int)); memmove(&g->inv_slot[i], &g->inv_slot[i + 1], (size_t)(g->ninv - i - 1) * sizeof(int)); g->ninv--;
+            if (g->inv_sel >= g->ninv) g->inv_sel = g->ninv ? g->ninv - 1 : 0;
+            got = 1; }
+        for (int i = 0; i < g->nhid && !got; i++) if (g->hid[i].o.pid == id) { o2 = g->hid[i].o; g->hid[i] = g->hid[--g->nhid]; got = 1; }
+        for (int r2 = 0; r2 < 100 && !got; r2++) { Room *q = &g->rooms[r2]; if (!q->valid) continue;
+            for (int i = 0; i < q->nobj; i++) if (q->objs[i].pid == id) { o2 = q->objs[i]; q->objs[i] = q->objs[--q->nobj]; got = 1; break; } }
+        if (got && rm < 100 && g->rooms[rm].valid && g->rooms[rm].nobj < 4000) { o2.x = x; o2.y = y; o2.z = z; o2.flags &= ~0x80; g->rooms[rm].objs[g->rooms[rm].nobj++] = o2; }
+        break; }
+    case 0x3a: { int n = m->c[m->p];                                  /* run the block only if exactly n conditions held ($10236); layout as 0e */
+        m->cond = (m->cond == n) ? 1 : 0; m->p++; vm_op(m, 0x0e); break; }
     case 0x1f: m->self->flags &= ~1; break;
     case 0x20: m->self->flags |= 1; break;
     case 0x21: m->self->flags ^= 1; break;
