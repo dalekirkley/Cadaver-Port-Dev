@@ -782,7 +782,12 @@ void game_change_energy(Game *g, int delta) { change_energy(g, delta); }
 /* Debug text for the window title (F12): data counts, target, last verb, door state. Returns 0 when the overlay is off. */
 int game_debug_text(const Game *g, char *buf, int n) {
     if (!g->dbg) return 0;
-    snprintf(buf, (size_t)n, "NVM %d EXAM %d TAKE %d HID %d | ROOM %d TARGET %d VERBS %d | LAST VERB %d PID %d RAN %d | WALL51 %d HERO %d,%d",
-             g->nvm, g->nexam, g->ntake, g->nhid, g->cur, g->target, g->nverbs, g->dbg_verb, g->dbg_pid, g->dbg_ran, g->wallflag[51], g->hero.x, g->hero.y);
+    int len = snprintf(buf, (size_t)n, "NVM %d | ROOM %d TARGET %d | VERB %d PID %d RAN %d | WALL51 %d", g->nvm, g->cur, g->target, g->dbg_verb, g->dbg_pid, g->dbg_ran, g->wallflag[51]);
+    const Room *r = &g->rooms[g->cur];
+    for (int i = 0; i < r->nobj && len < n - 40; i++) if (r->objs[i].pid == g->dbg_pid) len += snprintf(buf + len, (size_t)(n - len), " | FLAGS %02x SLOT %d", r->objs[i].flags, r->objs[i].slot);
+    for (int i = 0; i < g->nvm && len < n - 60; i++) if (g->vm_pid[i] == g->dbg_pid) {
+        len += snprintf(buf + len, (size_t)(n - len), " | CODE(%d)", g->vm_len[i]);
+        for (int k = 0; k < g->vm_len[i] && k < 20 && len < n - 4; k++) len += snprintf(buf + len, (size_t)(n - len), " %02x", g->vm_code[i][k]);
+        break; }
     return 1;
 }
