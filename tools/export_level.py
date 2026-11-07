@@ -167,6 +167,7 @@ for i in range(L.g6.n):
         ln=e[p]
         if e[p+1]&0x7f==5:vm.append((i,bytes(e[p+2:p+ln])))
         elif e[p+1]&0x7f==9 and e[p+2:p+4]==b'\0\0':vm.append((i|0x8000,bytes(e[p+4:p+ln])))   # event 9 with the hero (placement 0) as the other party: contact scripts
+        elif e[p+1]&0x7f==0x0d:vm.append((i|0x4000,bytes(e[p+4:p+ln])))   # event 0xd: posted by an object's animation program (param word at +2); ops follow
         p+=ln
 P('H',len(vm))
 for pid,b in vm:P('HB',pid,len(b));o+=b
@@ -228,7 +229,7 @@ for s_ in range(112,122):
         except Exception:im=None
         if im is None:break
         fr.append((k,im))
-    if len(fr)>=10:cf.append((s_,e,tab,fr))
+    if len(fr)>=2:cf.append((s_,e,tab,fr))
 P('H',len(cf))
 for s_,e,tab,fr in cf:
     P('BB',s_,len(fr))
@@ -244,4 +245,15 @@ for n in range(100):
             d=p[0xc];ch.append((pid,u16(p,d),u16(p,d+2),p[d+4],p[d+5]))
 P('H',len(ch))
 for c in ch:P('HHHBB',*c)
+# creature movement programs (placement movement record at +[+0xd]: step sizes +6..+8, program from +0xe). Ops: 00 a b c = move (signed counts per axis, one step per tick), 01 d = relative jump, 02 = stop, 03 n = wait n ticks, 04 n = post event $c
+mv=[]
+for pid in range(L.g6.n):
+    p=L.g6.rec(pid)
+    if len(p)<0x14 or not 112<=u16(p,6)<=123:continue
+    d=p[0xd]
+    if d+0xe>=len(p):continue
+    mv.append((pid,p[d+6],p[d+7],p[d+8],bytes(p[d+0xe:d+0xe+96])))
+P('H',len(mv))
+for pid,s0,s1,s2,pr in mv:
+    P('HBBBB',pid,s0,s1,s2,len(pr));o+=pr
 open(out,'wb').write(o);print(len(o),'bytes,',len(exam),'examine texts')

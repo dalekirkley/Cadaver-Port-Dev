@@ -22,7 +22,7 @@ typedef struct { int sfx; double pos, step; int vol; double left, total; } Voice
 typedef struct { const SndEv *ev; int n, i, mv, snd; double t, el; } SeqVoice;   /* left = seconds before the voice is cut (0 = play to the end) */
 typedef struct { int state, w, h; int16_t f[5]; int push; int16_t fx, fy, fz, name; uint8_t c, b16, b17, b1d; uint8_t *px; int aw, ah, ax, ay; uint8_t *apx; int nfr; struct { int w, h, dx, dy; uint8_t *px; } fr[16]; } Sprite;
 typedef struct { int16_t hx, hy; int w, h; uint8_t *px; } Frame;
-typedef struct { int x, y, z, slot, flags, pid, xflags, anim, atick, home, stage, vx, vy, life, hp, lift; } Obj;   /* life > 0: a missile in flight; hp: remaining health of a creature (0 = not set yet) */
+typedef struct { int x, y, z, slot, flags, pid, xflags, anim, atick, home, stage, vx, vy, life, hp, lift, mpc, mwait, mstop, mc[3], mdir, skey; } Obj;   /* life > 0: a missile in flight; hp: remaining health of a creature (0 = not set yet) */
 #define MISSILE_SLOT 31          /* the thrown-rock image (16x7) */
 #define MISSILE_PID 9000
 #define MISSILE_SPEED 3
@@ -33,7 +33,7 @@ typedef struct {
     int valid, x0, y0, sx, sy, basez, org, name, prefix;
     uint8_t *bg;                      /* 320*200*4 */
     int nwalls; Wall *walls;
-    int nobj; Obj *objs;              /* live state, persists while the program runs */
+    int nobj, ocap; Obj *objs;              /* live state, persists while the program runs */
 } Room;
 
 #define MAX_WALLIDX 4096
@@ -47,7 +47,7 @@ struct Game {
     Obj hero;                         /* hero.slot = 8 */
     int facing, anim_t, moving;
     uint8_t font[46 * 24], fontmap[32]; char **text; int ntext; int day; int energy; int jump_t, jump_z0;
-    int has_scroll; uint8_t scroll_tiles[18 * 32], scroll_map[0x30], font5[46 * 20]; int nexam, nuse, ntake; uint16_t take_pid[512]; int16_t take_gold[512], take_xp[512]; uint8_t counter[256], gflag[256]; uint32_t gbits; int nhid; struct { int room; Obj o; } hid[128]; int hurt_cd; int want_level; int pull_pid, pull_room; int spawn_pid; int rs_period[100], rs_nb[100]; uint8_t *rs_blk[100][16]; int tm_room, tm_left; int nch; uint16_t ch_pid[64], ch_cont[64], ch_key[64]; uint8_t ch_flags[64], ch_trap[64]; int dbg, dbg_verb, dbg_pid, dbg_ran, dbg_execs; unsigned dbg_log[4][3]; unsigned char dbg_tr[48]; int dbg_ntr; int nvm; uint16_t vm_pid[256]; uint8_t vm_len[256], vm_code[256][255]; uint16_t exam_pid[512], exam_text[512], use_pid[512], use_text[512];   /* examine scroll */
+    int has_scroll; uint8_t scroll_tiles[18 * 32], scroll_map[0x30], font5[46 * 20]; int nexam, nuse, ntake; uint16_t take_pid[512]; int16_t take_gold[512], take_xp[512]; uint8_t counter[256], gflag[256]; uint32_t gbits; int nhid; struct { int room; Obj o; } hid[128]; int hurt_cd; int want_level; int pull_pid, pull_room; int spawn_pid; int rs_period[100], rs_nb[100]; uint8_t *rs_blk[100][16]; int tm_room, tm_left; uint8_t mv_prog[512][96]; uint8_t mv_len[512], mv_step[512][3]; int nch; uint16_t ch_pid[64], ch_cont[64], ch_key[64]; uint8_t ch_flags[64], ch_trap[64]; int dbg, dbg_verb, dbg_pid, dbg_ran, dbg_execs; unsigned dbg_log[4][3]; unsigned char dbg_tr[48]; int dbg_ntr; int nvm; uint16_t vm_pid[256]; uint8_t vm_len[256], vm_code[256][255]; uint16_t exam_pid[512], exam_text[512], use_pid[512], use_text[512];   /* examine scroll */
     int scroll_t; char scroll_str[256]; long score; int map_open, map_px, map_py, status_open; long gold, xp, level; uint8_t visited[100];
     int has_icons; uint8_t icons[20 * 112]; uint16_t slotpos[8][4]; uint8_t verbtab[16];
     int target, nverbs, verbs[8], menu, sel, prev_joy, msg, msg_t, ninv, inv[64], inv_slot[64], inv_mode, inv_sel, inv_hold;     /* verb menu state */
@@ -96,7 +96,7 @@ Game *game_load(const char *path) {
             w->slot = rd16(f); w->z = rd8(f); w->wx = rds16(f); w->wy = rds16(f);
             w->idx = rd16(f); w->flags = rd16(f); w->b7 = rd8(f); if (w->idx < MAX_WALLIDX) { g->wallflag[w->idx] = (uint16_t)w->flags; if (w->flags) g->walldoor[w->idx] = 1; }
         }
-        int no = rd16(f); r->objs = calloc((size_t)no + 32, sizeof(Obj)); r->nobj = 0;
+        int no = rd16(f); r->objs = calloc((size_t)no + 32, sizeof(Obj)); r->nobj = 0; r->ocap = no + 32;
         for (int k = 0; k < no; k++) {
             Obj o; memset(&o, 0, sizeof o); o.pid = rd16(f); o.x = rd8(f); o.y = rd8(f); o.z = rd8(f); o.flags = rd8(f); o.slot = rd16(f); o.xflags = rd8(f); o.anim = 0; o.atick = 0; o.home = (int)n; o.stage = 0;
             if (o.flags & 0x80) { if (g->nhid < 128) { g->hid[g->nhid].room = (int)n; g->hid[g->nhid++].o = o; } continue; }   /* not spawned yet: a script can bring it in */
@@ -144,6 +144,10 @@ Game *game_load(const char *path) {
                   if (k < 16) { sp->fr[k].w = w; sp->fr[k].h = h; sp->fr[k].dx = dx; sp->fr[k].dy = dy; sp->fr[k].px = px; sp->nfr = k + 1; } else free(px); } } }
         { int nc = rd16(f); if (nc < 0 || nc > 64) nc = 0; g->nch = nc;         /* chest data: contents, key, flags, trap */
           for (int i = 0; i < nc; i++) { g->ch_pid[i] = (uint16_t)rd16(f); g->ch_cont[i] = (uint16_t)rd16(f); g->ch_key[i] = (uint16_t)rd16(f); g->ch_flags[i] = (uint8_t)rd8(f); g->ch_trap[i] = (uint8_t)rd8(f); } }
+        { int nm = rd16(f); if (nm < 0 || nm > 512) nm = 0;                    /* creature movement programs (optional, after the chests) */
+          for (int i = 0; i < nm; i++) { int pid = rd16(f), s0 = rd8(f), s1 = rd8(f), s2 = rd8(f), ln = rd8(f); uint8_t tmp[256];
+              if (ln < 0 || ln > 255) ln = 0; if (ln > 0) rd(f, tmp, (size_t)ln);
+              if (pid >= 0 && pid < 512 && ln > 0) { memcpy(g->mv_prog[pid], tmp, (size_t)(ln > 96 ? 96 : ln)); g->mv_len[pid] = (uint8_t)(ln > 96 ? 96 : ln); g->mv_step[pid][0] = (uint8_t)s0; g->mv_step[pid][1] = (uint8_t)s1; g->mv_step[pid][2] = (uint8_t)s2; } } }
         g->has_scroll = 1;
     }
     fclose(f);
@@ -332,12 +336,14 @@ static void vm_op(Vm *m, int op) {
     case 0x33: { int n = m->c[m->p]; m->p++; if (n <= 9) g->want_level = n + 2; m->stop = 1; break; }              /* go to level n+2 ($10098) */
     case 0x24: { int id = vm_word(m); int x = m->c[m->p], y = m->c[m->p + 1], z = m->c[m->p + 2]; m->p += 4;   /* move/spawn a placement into the current room ($104b4) */
         Room *cr = &g->rooms[g->cur]; Obj o2; int got = 0;
-        for (int i = 0; i < cr->nobj; i++) if (cr->objs[i].pid == id) return;
+        int skey = (x << 8 | y) + 1;                                     /* one placement can be spawned several times at different spots (3 bats in room 38); the same spot again is a repeat */
+        for (int i = 0; i < cr->nobj; i++) if (cr->objs[i].pid == id) { if (cr->objs[i].skey == skey || cr->objs[i].skey == 0 || cr->nobj >= cr->ocap - 1) return; if (!got) { o2 = cr->objs[i]; got = 1; } }
+        if (got) { o2.skey = skey; o2.flags &= ~0x80; o2.x = x; o2.y = y; o2.z = z >= 0x40 ? 0 : z; o2.stage = 0; o2.mpc = o2.mwait = o2.mstop = 0; memset(o2.mc, 0, sizeof o2.mc); cr->objs[cr->nobj++] = o2; break; }
         for (int i = 0; i < g->nhid && !got; i++) if (g->hid[i].o.pid == id) { o2 = g->hid[i].o; g->hid[i] = g->hid[--g->nhid]; got = 1; }
         for (int rm = 0; rm < 100 && !got; rm++) { Room *r2 = &g->rooms[rm]; if (!r2->valid || rm == g->cur) continue;
             for (int i = 0; i < r2->nobj; i++) if (r2->objs[i].pid == id) { o2 = r2->objs[i]; r2->objs[i] = r2->objs[--r2->nobj]; got = 1; break; } }
         if (!got) return;
-        o2.flags &= ~0x80; o2.x = x; o2.y = y; o2.z = z >= 0x40 ? 0 : z; o2.anim = 8; o2.atick = 8; o2.stage = 0; cr->objs[cr->nobj++] = o2; break; }
+        o2.flags &= ~0x80; o2.x = x; o2.y = y; o2.z = z >= 0x40 ? 0 : z; o2.anim = g->spr[o2.slot].nfr >= 10 ? 8 : 0; o2.atick = 8; o2.stage = 0; o2.skey = skey; cr->objs[cr->nobj++] = o2; break; }
     case 0x25: { int n = m->c[m->p], dx = m->c[m->p + 1], dy = m->c[m->p + 2], dz = m->c[m->p + 3]; m->p += 4;   /* teleport the hero into room n at an offset from its origin ($10546) */
         if (n < 100 && g->rooms[n].valid) { g->cur = n; g->hero.x = MARGIN + HERO_FX + dx; g->hero.y = MARGIN + HERO_FY + dy; g->hero.z = dz; }
         break; }
@@ -657,6 +663,37 @@ static void update_missiles(Game *g) {
     int w = 0; for (int i = 0; i < r->nobj; i++) if (r->objs[i].life >= 0) r->objs[w++] = r->objs[i];
     r->nobj = w;
 }
+/* Creature path programs (original movement executor $f3f2/$f606): one step per tick along each non-zero axis counter.
+   op 0 a b c = load counters, 1 d = jump by d bytes from the op, 2 = stop, 3 n = wait n ticks, 4 n = (event) skipped. A blocked step reverses the path (the original posts event $b). */
+static int creature_free(Game *g, Room *r, Obj *o, int nx, int ny) {
+    Obj ghost = *o; ghost.x = nx; ghost.y = ny; Box gb = box_of(g, &ghost);
+    int fx = gb.x1 - gb.x0 + 1, fy = gb.y1 - gb.y0 + 1;
+    if (nx >= r->sx * 8 || ny >= r->sy * 8 || nx - fx + 1 < MARGIN || ny - fy + 1 < MARGIN) return 0;
+    return 1;                                                    /* static furniture does not stop them in the emulator captures (room 38); only the room edge does */
+}
+static void creature_move(Game *g, Room *r, Obj *c) {
+    int pid = c->pid; if (pid < 0 || pid >= 512 || !g->mv_len[pid] || c->mstop || c->life > 0) return;
+    if (c->mwait > 0) { c->mwait--; return; }
+    const uint8_t *pr = g->mv_prog[pid]; int len = g->mv_len[pid];
+    for (int guard = 0; guard < 8 && !(c->mc[0] | c->mc[1] | c->mc[2]) && !c->mwait && !c->mstop; guard++) {
+        if (c->mpc < 0 || c->mpc + 1 >= len) { c->mstop = 1; break; }
+        int op = pr[c->mpc];
+        if (op == 0 && c->mpc + 3 < len) { c->mc[0] = (int8_t)pr[c->mpc + 1]; c->mc[1] = (int8_t)pr[c->mpc + 2]; c->mc[2] = (int8_t)pr[c->mpc + 3]; c->mpc += 4; }
+        else if (op == 1) c->mpc += (int8_t)pr[c->mpc + 1];
+        else if (op == 3) { c->mwait = pr[c->mpc + 1]; c->mpc += 2; }
+        else if (op == 4) c->mpc += 2;
+        else c->mstop = 1;
+    }
+    if (!(c->mc[0] | c->mc[1] | c->mc[2])) return;
+    int d[3] = { c->mc[0] > 0 ? 1 : c->mc[0] < 0 ? -1 : 0, c->mc[1] > 0 ? 1 : c->mc[1] < 0 ? -1 : 0, c->mc[2] > 0 ? 1 : c->mc[2] < 0 ? -1 : 0 };
+    int st0 = g->mv_step[pid][0] ? g->mv_step[pid][0] : 1, st1 = g->mv_step[pid][1] ? g->mv_step[pid][1] : 1, st2 = g->mv_step[pid][2] ? g->mv_step[pid][2] : 1;
+    int nx = c->x + d[0] * st0, ny = c->y + d[1] * st1;
+    if (!creature_free(g, r, c, nx, ny)) { c->mc[0] = -c->mc[0]; c->mc[1] = -c->mc[1]; c->mc[2] = -c->mc[2]; return; }
+    c->x = nx; c->y = ny; c->z += d[2] * st2;
+    for (int i = 0; i < 3; i++) if (c->mc[i]) c->mc[i] += c->mc[i] > 0 ? -1 : 1;
+    if (d[0] > 0) c->mdir = 0; else if (d[0] < 0) c->mdir = 3; else if (d[1] > 0) c->mdir = 1; else if (d[1] < 0) c->mdir = 2;
+}
+
 void game_tick(Game *g, int joy) {
     Room *r = &g->rooms[g->cur]; Obj *h = &g->hero;
     int fire_edge = (joy & JOY_FIRE) && !(g->prev_joy & JOY_FIRE), new_dirs = (joy & 15) & ~(g->prev_joy & 15);
@@ -669,6 +706,9 @@ void game_tick(Game *g, int joy) {
             for (int b = 0; b < g->rs_nb[room]; b++) { const uint8_t *c = g->rs_blk[room][b]; if ((c[1] & 0x7f) != ev) continue;
                 Vm m = { g, &g->hero, c, c[0], 2, 0, 0 }; vm_block(&m); }
         }
+        { int n0 = g->rooms[g->cur].nobj;                    /* event 0xd scripts (posted by an object's animation program; here run once on entry): the dragon spawns its flame this way */
+          for (int i = 0; i < n0; i++) { Obj self = g->rooms[g->cur].objs[i];
+              for (int k = 0; k < g->nvm; k++) if (g->vm_pid[k] == (self.pid | 0x4000)) run_script(g, &self, g->vm_code[k], g->vm_len[k]); } }
         r = &g->rooms[g->cur]; }
     else if (g->tm_left > 0 && --g->tm_left == 0) {
         g->tm_left = g->rs_period[g->cur] * 17;
@@ -712,7 +752,9 @@ void game_tick(Game *g, int joy) {
     g->tickno++;
     if (g->hurt_cd > 0) g->hurt_cd--;
     for (int i = 0; i < r->nobj; i++) {                      /* water lurker (slot 116): ripples, surfaces, opens its mouth, sinks, then returns to the pool until the next timer. Frame order and timing are read off the emulator, not decoded */
-        Obj *c = &r->objs[i]; if (g->spr[c->slot].nfr < 10) continue;
+        Obj *c = &r->objs[i];
+        if (c->slot == 121 && g->spr[121].nfr >= 4) { static const int fl[4] = { 0, 3, 2, 1 }; c->anim = fl[(c->stage++ / 3) % 4]; continue; }   /* dragon flame: 4-frame loop, 3 ticks per frame (emulator, room 36) */
+        if (g->spr[c->slot].nfr < 10) continue;
         if (c->slot == 112 && g->spr[112].nfr >= 16) {          /* worm: 78-tick cycle read off the emulator: hop (frame 15, arc), crawl (frames 12/13 alternating), rest (frame 14); gone after 3 cycles */
             static const int arc[10] = { 8, 18, 33, 46, 54, 52, 42, 28, 12, 0 };
             int t = (c->stage + 60) % 78; c->stage = c->home == g->cur ? t - 59 : c->stage + 1;   /* a fresh worm starts in its rest phase */
@@ -731,6 +773,8 @@ void game_tick(Game *g, int joy) {
             r->objs[i] = r->objs[--r->nobj]; if (hr->valid) hr->objs[hr->nobj++] = back; i--; continue; }
         c->anim = seq[c->stage].f; c->atick = seq[c->stage].t;
     }
+    for (int i = 0; i < r->nobj; i++) { Obj *c = &r->objs[i]; int sl = c->slot; if (sl < 113 || sl > 119 || sl == 116) continue;      /* path-following creatures: 3-frame walk cycle per facing (0-2 = +x, 3-5 = +y, 6-8 = -y, 9-11 = -x; only +x/-x verified), 3 ticks per frame */
+        creature_move(g, r, c); if (g->spr[sl].nfr >= 12) c->anim = ((int[]){ 0, 3, 6, 9 })[c->mdir] + (g->tickno / 3) % 3; }
     if (g->hurt_cd == 0) {                                  /* contact scripts (event 9 with the hero): creatures, fires, spikes. Original posts it every tick of contact; a 1 s repeat is a guess */
         Box hb = box_of(g, h);
         for (int i = 0; i < r->nobj && g->hurt_cd == 0; i++) {
