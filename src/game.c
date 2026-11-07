@@ -345,7 +345,7 @@ static int try_exit(Game *g, int dx, int dy) {
             int key = g->wallflag[w->idx];                        /* locked door: the key item's placement id is the flag value */
             for (int i = 0; i < g->ninv; i++) if (g->inv[i] == key) {
                 if (w->b7 & 2) { memmove(&g->inv[i], &g->inv[i + 1], (size_t)(g->ninv - i - 1) * sizeof(int)); g->ninv--; }   /* key consumed */
-                if (w->b7 & 4) g->wallflag[w->idx] = 0;           /* unlocked for good */
+                g->wallflag[w->idx] = 0;                              /* the door stays unlocked after the key is used (a consumed key could never reopen it) */
                 play_sound(g, 18); say(g, 1); key = 0; break;
             }
             if (key) { if (g->bump_timer <= 0) { play_sound(g, 60); g->bump_timer = 32; } return 0; }
