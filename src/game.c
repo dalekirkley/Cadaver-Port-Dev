@@ -568,7 +568,7 @@ void game_tick(Game *g, int joy) {
     g->tickno++;
     if (g->hurt_cd > 0) g->hurt_cd--;
     if ((g->tickno & 3) == 0)                               /* creatures (slots 112-121) home in on the hero: placeholder until the original's byte-coded AI is decoded */
-        for (int i = 0; i < r->nobj; i++) { Obj *c = &r->objs[i]; if (c->slot < 112 || c->slot > 121) continue;
+        for (int i = 0; i < r->nobj; i++) { Obj *c = &r->objs[i]; if (c->slot < 112 || c->slot > 121 || !has_contact_script(g, c)) continue;
             int ddx = h->x > c->x ? 1 : h->x < c->x ? -1 : 0, ddy = h->y > c->y ? 1 : h->y < c->y ? -1 : 0;
             if (abs(h->x - c->x) >= abs(h->y - c->y)) { if (!ddx || !try_move(g, r, c, ddx, 0, 0)) if (ddy) try_move(g, r, c, 0, ddy, 0); }
             else { if (!ddy || !try_move(g, r, c, 0, ddy, 0)) if (ddx) try_move(g, r, c, ddx, 0, 0); } }
