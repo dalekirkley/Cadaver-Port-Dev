@@ -58,7 +58,12 @@ static LRESULT CALLBACK wndproc(HWND h, UINT m, WPARAM w, LPARAM l) {
     case WM_ERASEBKGND: return 1;
     case WM_PAINT: {
         PAINTSTRUCT ps; HDC dc = BeginPaint(h, &ps); RECT rc; GetClientRect(h, &rc);
-        StretchDIBits(dc, 0, 0, rc.right, rc.bottom, 0, 0, SCREEN_W, SCREEN_H, bgra, &bmi, DIB_RGB_COLORS, SRCCOPY);
+        { int cw = rc.right, ch = rc.bottom, dw = cw, dh = cw * SCREEN_H / SCREEN_W;      /* keep the 320x200 aspect: letterbox with black bars */
+          if (dh > ch) { dh = ch; dw = ch * SCREEN_W / SCREEN_H; }
+          int ox = (cw - dw) / 2, oy = (ch - dh) / 2;
+          if (ox > 0) { PatBlt(dc, 0, 0, ox, ch, BLACKNESS); PatBlt(dc, ox + dw, 0, cw - ox - dw, ch, BLACKNESS); }
+          if (oy > 0) { PatBlt(dc, 0, 0, cw, oy, BLACKNESS); PatBlt(dc, 0, oy + dh, cw, ch - oy - dh, BLACKNESS); }
+          if (dw > 0 && dh > 0) StretchDIBits(dc, ox, oy, dw, dh, 0, 0, SCREEN_W, SCREEN_H, bgra, &bmi, DIB_RGB_COLORS, SRCCOPY); }
         EndPaint(h, &ps); return 0; }
     }
     return DefWindowProc(h, m, w, l);
