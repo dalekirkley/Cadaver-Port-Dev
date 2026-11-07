@@ -26,15 +26,11 @@ void crt_render(uint32_t *dst, int dw, int dh, const uint32_t *src, int sw, int 
     for (int y = 0; y < sh; y++) for (int x = 0; x < sw; x++) for (int c = 0; c < 3; c++) {
         float a = 0; for (int k = -3; k <= 3; k++) a += tmp[(clampi(y + k, 0, sh - 1) * sw + x) * 3 + c]; bloom[(y * sw + x) * 3 + c] = a / 7.0f; }
 
-    float aspect = (float)sw / sh;
-    for (int py = 0; py < dh; py++) {
+        for (int py = 0; py < dh; py++) {
         float v = (py + 0.5f) / dh * 2.0f - 1.0f;
         for (int px = 0; px < dw; px++) {
             float u = (px + 0.5f) / dw * 2.0f - 1.0f;
-            /* barrel curvature */
-            float cu = u * (1.0f + 0.045f * v * v), cv = v * (1.0f + 0.045f * u * u * (1.0f / aspect) * aspect);
-            cu *= 0.985f; cv *= 0.985f;
-            if (cu < -1 || cu > 1 || cv < -1 || cv > 1) { dst[py * dw + px] = 0; continue; }
+            float cu = u, cv = v;                                                        /* flat screen: no curvature */
             float sx = (cu * 0.5f + 0.5f) * sw - 0.5f, sy = (cv * 0.5f + 0.5f) * sh - 0.5f;
             int iy = clampi((int)floorf(sy + 0.5f), 0, sh - 1); float dy = sy - iy;           /* distance from the scanline centre, in source rows */
             int ix = (int)floorf(sx); float fx = sx - ix; int x0 = clampi(ix, 0, sw - 1), x1 = clampi(ix + 1, 0, sw - 1);
@@ -49,10 +45,6 @@ void crt_render(uint32_t *dst, int dw, int dh, const uint32_t *src, int sw, int 
             /* RGB aperture grille: one phosphor stripe per channel every 3 output pixels, soft edges */
             int ph = px % 3; static const float M[3][3] = {{1.0f, 0.62f, 0.62f}, {0.62f, 1.0f, 0.62f}, {0.62f, 0.62f, 1.0f}};
             for (int c = 0; c < 3; c++) rgb[c] *= M[ph][c] * 1.28f;
-            /* vignette + rounded-corner falloff */
-            float vig = 1.0f - 0.18f * (u * u + v * v) * 0.5f;
-            float edge = fminf(fminf(1.0f - fabsf(cu), 1.0f - fabsf(cv)) * 40.0f, 1.0f);
-            for (int c = 0; c < 3; c++) rgb[c] *= vig * edge;
             uint32_t R = (uint32_t)outc(rgb[0]), G = (uint32_t)outc(rgb[1]), B = (uint32_t)outc(rgb[2]);
             dst[py * dw + px] = R << 16 | G << 8 | B;
         }
