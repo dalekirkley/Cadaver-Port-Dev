@@ -824,7 +824,7 @@ void game_tick(Game *g, int joy) {
     if (g->hurt_cd > 0) g->hurt_cd--;
     for (int i = 0; i < r->nobj; i++) { Obj *c = &r->objs[i]; if (c->slot < 0 || c->slot > 255 || !g->aprog[c->slot] || !c->aon) continue;      /* animation programs of creatures and props */
         anim_step(g, c);
-        if (!g->lvl1 || c->slot == 113 || c->slot == 117 || c->slot == 119) c->anim = c->aframe;   /* level 1: walkers 113/117/119 follow their programs (checked against the original's stepper: 3, 2 and 2 ticks per frame; the old hand-measured table was aliased by the capture interval) */
+        if (!g->lvl1 || c->slot == 113 || c->slot == 117 || c->slot == 118 || c->slot == 119) c->anim = c->aframe;   /* level 1: walkers 113/117/119 follow their programs (checked against the original's stepper: 3, 2 and 2 ticks per frame; the old hand-measured table was aliased by the capture interval) */
         else if (getenv("CADAVER_ANIMCHK") && (c->aframe != c->anim || getenv("CADAVER_ANIMALL"))) fprintf(stderr, "ANIM slot %d tick %u prog %d walk/special %d\n", c->slot, g->tickno, c->aframe, c->anim); }
     for (int i = 0; i < r->nobj; i++) {                      /* water lurker (slot 116): ripples, surfaces, opens its mouth, sinks, then returns to the pool until the next timer. Frame order and timing are read off the emulator, not decoded */
         Obj *c = &r->objs[i];
@@ -858,7 +858,7 @@ void game_tick(Game *g, int joy) {
     }
     for (int i = 0; i < r->nobj; i++) { Obj *c = &r->objs[i]; int sl = c->slot; if (g->lvl1 ? (sl < 113 || sl > 119 || sl == 116) : !(c->pid >= 0 && c->pid < 1024 && g->mv_len[c->pid])) continue;      /* path-following creatures */
         creature_move(g, r, c);
-        if (g->lvl1 && sl == 118 && g->spr[118].nfr >= 5) c->anim = g->tickno % 12 < 4 ? 4 : 2; }      /* hovering creature of room 21: frame 4 for 4 ticks then frame 2 for 8 (emulator), whichever way it moves */
+}
     if (g->lvl1 && g->cur == 36) { int t = (g->tickno - g->ent_tick) % 211; if ((t == 16 || t == 68) && !((g->gbits >> 3) & 1)) change_energy(g, -20); }   /* the dragon's lightning hurts after the flash (unless global bit 3 $984 is set) */
     if (g->hurt_cd == 0) {                                  /* contact scripts (event 9 with the hero): creatures, fires, spikes. Original posts it every tick of contact; measured in the emulator: a spider costs 2 energy every tick (1 per video frame), no cooldown */
         Box hb = box_of(g, h);
