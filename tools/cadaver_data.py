@@ -148,7 +148,7 @@ class Level:
                 if not isA and ri>=sy-1:continue
                 cx,cy=(ri,0) if isA else (0,ri+1)
                 for h,t in enumerate(row):
-                    if t==0 or t>=80:continue
+                    if t==0 or t>=min(0x80,(len(self.s217)-self.wall_base)//512):continue
                     px,py=self.project(org,cx*8+7,cy*8+7,h*16,F);tt=self.wall_tile(t);im.paste(tt,(px,py),tt)
         # objects
         if objects:
