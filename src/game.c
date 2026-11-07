@@ -433,6 +433,10 @@ static void exec_verb(Game *g, int verb) {
     Room *r = &g->rooms[g->cur];
     if (g->target < 0) return;
     g->dbg_verb = verb; g->dbg_pid = r->objs[g->target].pid; g->dbg_ran = 0; g->dbg_ntr = 0; g->dbg_log[g->dbg_execs & 3][0] = g->tickno; g->dbg_log[g->dbg_execs & 3][1] = (unsigned)verb; g->dbg_log[g->dbg_execs & 3][2] = (unsigned)g->prev_joy; g->dbg_execs++;
+    if (verb == 2 && g->ninv >= 32) {                                                /* the rucksack holds 32 things */
+        int tre = 0; for (int i = 0; i < g->ntake; i++) if (g->take_pid[i] == r->objs[g->target].pid) tre = 1;
+        if (!tre) { say(g, 53); g->menu = 0; return; }
+    }
     if (verb == 2 && g->ninv < 64) {                                                 /* take: the object goes to the rucksack */
         { int pid = r->objs[g->target].pid;                                          /* treasure: gold and XP from the take script ($ffdc/$ffa0) */
           for (int i = 0; i < g->ntake; i++) if (g->take_pid[i] == pid) {
