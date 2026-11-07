@@ -793,7 +793,7 @@ void game_tick(Game *g, int joy) {
         for (int k = 0; g->lvl1 && k < (int)(sizeof walk / sizeof walk[0]); k++) if (walk[k].slot == sl && g->spr[sl].nfr >= walk[k].base[3] + walk[k].nf)
             c->anim = walk[k].base[c->mdir] + (g->tickno / walk[k].ticks) % walk[k].nf;
         if (g->lvl1 && sl == 118 && g->spr[118].nfr >= 5) c->anim = g->tickno % 12 < 4 ? 4 : 2; }      /* hovering creature of room 21: frame 4 for 4 ticks then frame 2 for 8 (emulator), whichever way it moves */
-    if (g->hurt_cd == 0) {                                  /* contact scripts (event 9 with the hero): creatures, fires, spikes. Original posts it every tick of contact; a 1 s repeat is a guess */
+    if (g->hurt_cd == 0) {                                  /* contact scripts (event 9 with the hero): creatures, fires, spikes. Original posts it every tick of contact; measured in the emulator: a spider costs 2 energy every tick (1 per video frame), no cooldown */
         Box hb = box_of(g, h);
         for (int i = 0; i < r->nobj && g->hurt_cd == 0; i++) {
             Obj *q = &r->objs[i]; int has = 0;
@@ -801,7 +801,7 @@ void game_tick(Game *g, int joy) {
             if (!has || (q->slot == 116 && q->anim >= 8)) continue;
             Box qb = box_of(g, q);
             if (qb.x1 + 1 < hb.x0 || hb.x1 + 1 < qb.x0 || qb.y1 + 1 < hb.y0 || hb.y1 + 1 < qb.y0 || qb.z1 < hb.z0 || hb.z1 < qb.z0) continue;
-            for (int k = 0; k < g->nvm; k++) if (g->vm_pid[k] == (q->pid | 0x8000)) { run_script(g, q, g->vm_code[k], g->vm_len[k]); g->hurt_cd = 25; }
+            for (int k = 0; k < g->nvm; k++) if (g->vm_pid[k] == (q->pid | 0x8000)) { run_script(g, q, g->vm_code[k], g->vm_len[k]); g->hurt_cd = 1; }
         }
     }
     if (g->pull_pid && g->pull_room != g->cur) g->pull_pid = 0;
