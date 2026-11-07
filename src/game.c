@@ -651,7 +651,9 @@ static void update_missiles(Game *g) {
                 if (!overlap(mb, box_of(g, q))) continue;
                 if (has_contact_script(g, q)) {
                     if (q->hp <= 0) q->hp = CREATURE_HP;
-                    q->hp -= ROCK_POWER; play_sound(g, 0x1a);
+                    q->hp -= ROCK_POWER;
+                    { static const uint8_t hit_snd[19] = { 9, 9, 9, 13, 13, 9, 19, 9, 9, 9, 19, 9, 13, 9, 9, 13, 13, 19, 9 };    /* victim's hit sound, table $5bf8 indexed by type byte +$1d */
+                      int ty = g->spr[q->slot].b1d; play_sound(g, ty >= 0 && ty < 19 ? hit_snd[ty] : 0x1a); }
                     if (q->hp <= 0) q->life = -1;                      /* killed: removed below */
                 }
                 dead = 1; break;
