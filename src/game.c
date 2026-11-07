@@ -47,7 +47,7 @@ struct Game {
     Obj hero;                         /* hero.slot = 8 */
     int facing, anim_t, moving;
     uint8_t font[46 * 24], fontmap[32]; char **text; int ntext; int day; int energy; int jump_t, jump_z0;
-    int has_scroll; uint8_t scroll_tiles[18 * 32], scroll_map[0x30], font5[46 * 20]; int nexam, nuse, ntake; uint16_t take_pid[512]; int16_t take_gold[512], take_xp[512]; uint8_t counter[256], gflag[256]; uint32_t gbits; int nhid; struct { int room; Obj o; } hid[128]; int hurt_cd; int want_level; int pull_pid, pull_room; int spawn_pid; int rs_period[100], rs_nb[100]; uint8_t *rs_blk[100][16]; int tm_room, tm_left; uint8_t mv_prog[512][96]; uint8_t mv_len[512], mv_step[512][3], mv_pat[512]; int lvl1; int nch; uint16_t ch_pid[64], ch_cont[64], ch_key[64]; uint8_t ch_flags[64], ch_trap[64]; int dbg, dbg_verb, dbg_pid, dbg_ran, dbg_execs; unsigned dbg_log[4][3]; unsigned char dbg_tr[48]; int dbg_ntr; int nvm; uint16_t vm_pid[256]; uint8_t vm_len[256], vm_code[256][255]; uint16_t exam_pid[512], exam_text[512], use_pid[512], use_text[512];   /* examine scroll */
+    int has_scroll; uint8_t scroll_tiles[18 * 32], scroll_map[0x30], font5[46 * 20]; int nexam, nuse, ntake; uint16_t take_pid[512]; int16_t take_gold[512], take_xp[512]; uint8_t counter[256], gflag[256]; uint32_t gbits; int nhid; struct { int room; Obj o; } hid[128]; int hurt_cd; unsigned rng_seed, rng_last; int want_level; int pull_pid, pull_room; int spawn_pid; int rs_period[100], rs_nb[100]; uint8_t *rs_blk[100][16]; int tm_room, tm_left; uint8_t mv_prog[512][96]; uint8_t mv_len[512], mv_step[512][3], mv_pat[512]; int lvl1; int nch; uint16_t ch_pid[64], ch_cont[64], ch_key[64]; uint8_t ch_flags[64], ch_trap[64]; int dbg, dbg_verb, dbg_pid, dbg_ran, dbg_execs; unsigned dbg_log[4][3]; unsigned char dbg_tr[48]; int dbg_ntr; int nvm; uint16_t vm_pid[256]; uint8_t vm_len[256], vm_code[256][255]; uint16_t exam_pid[512], exam_text[512], use_pid[512], use_text[512];   /* examine scroll */
     int scroll_t; char scroll_str[256]; long score; int map_open, map_px, map_py, status_open; long gold, xp, level; uint8_t visited[100];
     int has_icons; uint8_t icons[20 * 112]; uint16_t slotpos[8][4]; uint8_t verbtab[16];
     int target, nverbs, verbs[8], menu, sel, prev_joy, msg, msg_t, ninv, inv[64], inv_slot[64], inv_mode, inv_sel, inv_hold;     /* verb menu state */
@@ -406,6 +406,12 @@ static void vm_op(Vm *m, int op) {
             if (m->p < m->len && m->c[m->p] == 0x0f) { m->p += 2; vm_block(m); }
         }
         break; }
+    case 0x00: case 0x08: { int id = vm_word(m); Obj *q = id >= 0x8000 ? m->self : find_obj(g, id); if (q && q != &g->hero) q->life = -1; break; }   /* 00: retire an object into the original's removed-objects list ($fd86, max 20; un-holds it); 08: hide it unless already hidden ($10004). Both: gone from the room */
+    case 0x02: if (m->self && m->self != &g->hero) m->self->life = -1; break;                                   /* 02: the same for the event's own object ($febe) */
+    case 0x4f: { int lo = m->c[m->p], hi = m->c[m->p + 1]; m->p += 2;                                           /* random number lo..hi stored for op 50 ($10a7c, generator $1109c: seed word $46e) */
+        unsigned sd = g->rng_seed ? g->rng_seed : (0x1d2bu ^ ((unsigned)g->tickno * 7919u)); unsigned d0 = (((sd << 8) & 0xff00u) | 0x0au); d0 = (d0 - sd) & 0xffffu; d0 = (d0 * 4 + sd + 1) & 0xffffu; if (!d0) d0 = 1; g->rng_seed = d0;
+        unsigned range = (unsigned)(hi - lo + 1) & 0xffffu; if (!range) range = 1; unsigned d3 = 0xffffu / range + 1; g->rng_last = (d0 / d3 + (unsigned)lo) & 0xffu; break; }
+    case 0x50: { int n = m->c[m->p++]; m->cond = (g->rng_last == (unsigned)n) ? m->cond + 1 : 0; break; }           /* condition: the last random number equals n ($10a8e) */
     default: m->stop = 1; break;                                      /* not decoded yet */
     }
 }
