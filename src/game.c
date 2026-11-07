@@ -206,7 +206,7 @@ static int overlap(Box a, Box b) {
 }
 static int flat(const Game *g, const Obj *o) { const Sprite *s = &g->spr[o->slot]; return o->slot != 8 && !s->push && s->fz <= 2; }   /* floor decals: walk-over, drawn under everything */
 /* Walking pushes only light objects (type byte +$c bit 1, the TAKE bit); bit 0 alone = heavy furniture (altars, pillars) that only the MOVE verb could shift. */
-static int pushable(const Game *g, const Obj *o) { return o->slot != 8 && ((g->spr[o->slot].push & 2) != 0 || g->spr[o->slot].b16 == 8); }   /* chests slide too */
+static int pushable(const Game *g, const Obj *o) { return o->slot != 8 && ((g->spr[o->slot].push & 2) != 0 || (g->spr[o->slot].c & 5) == 5); }   /* chests, barrels and crates: MOVE icon (bit 0) together with c bit 2; bit 0 alone = fixed furniture (altars, pillars) */
 
 /* Try to move o by (dx,dy); every overlapping object must itself be pushable and movable. */
 static int try_move(Game *g, Room *r, Obj *o, int dx, int dy, int depth) {
@@ -485,6 +485,7 @@ static void hero_gravity(Game *g, Room *r) {
 void game_tick(Game *g, int joy) {
     Room *r = &g->rooms[g->cur]; Obj *h = &g->hero;
     int fire_edge = (joy & JOY_FIRE) && !(g->prev_joy & JOY_FIRE), new_dirs = (joy & 15) & ~(g->prev_joy & 15);
+    if (fire_edge && !g->menu) g->pull_pid = 0;                 /* fire ends pull mode (choosing MOVE itself happens inside the menu below) */
     int prev = g->prev_joy; g->prev_joy = joy;
     g->visited[g->cur] = 1;
     if (g->status_open) { if ((joy & 0xCF) && !(prev & 0xCF)) g->status_open = 0; return; }              /* diary panel: waits for a key ($9d68) */
@@ -517,7 +518,7 @@ void game_tick(Game *g, int joy) {
             for (int k = 0; k < g->nvm; k++) if (g->vm_pid[k] == (q->pid | 0x8000)) { run_script(g, q, g->vm_code[k], g->vm_len[k]); g->hurt_cd = 25; }
         }
     }
-    if (g->pull_pid && (g->pull_room != g->cur || fire_edge)) g->pull_pid = 0;
+    if (g->pull_pid && g->pull_room != g->cur) g->pull_pid = 0;
     g->moving = 0;
     if (dx || dy) {
         g->facing = joy & 15; g->moving = 1;
