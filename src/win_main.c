@@ -8,13 +8,16 @@
 #include <mmsystem.h>
 #include <stdio.h>
 #include <string.h>
+#include <stdlib.h>
 #include "game.h"
+#include "crt.h"
 
 #define SCALE 2
 static BITMAPINFO bmi;
 static uint32_t fb[SCREEN_W * SCREEN_H];
 static uint32_t bgra[SCREEN_W * SCREEN_H];
 static int running = 1;
+static int crt_on = 0; static uint32_t *crt_buf; static int crt_w, crt_h;   /* F2 toggles the CRT filter */
 static int pending_level = 0;   /* F6..F10 = load data\\levelN.bin */
 #define AUDIO_RATE 22050
 #define ABUF 8
@@ -56,6 +59,7 @@ static LRESULT CALLBACK wndproc(HWND h, UINT m, WPARAM w, LPARAM l) {
     case WM_DESTROY: running = 0; PostQuitMessage(0); return 0;
     case WM_KEYDOWN:
         if (w == VK_ESCAPE) { running = 0; PostQuitMessage(0); }
+        if (w == VK_F2 && !(l & (1 << 30))) crt_on ^= 1;                    /* F2: CRT filter on/off */
         if (w >= VK_F6 && w <= VK_F10) pending_level = (int)(w - VK_F6) + 1;   /* debug level switch; F1 stays free for the map */
         return 0;
     case WM_SIZING: {                                           /* snap the window to the 320x200 shape while it is dragged */
@@ -77,7 +81,12 @@ static LRESULT CALLBACK wndproc(HWND h, UINT m, WPARAM w, LPARAM l) {
           int ox = (cw - dw) / 2, oy = (ch - dh) / 2;
           if (ox > 0) { PatBlt(dc, 0, 0, ox, ch, BLACKNESS); PatBlt(dc, ox + dw, 0, cw - ox - dw, ch, BLACKNESS); }
           if (oy > 0) { PatBlt(dc, 0, 0, cw, oy, BLACKNESS); PatBlt(dc, 0, oy + dh, cw, ch - oy - dh, BLACKNESS); }
-          if (dw > 0 && dh > 0) StretchDIBits(dc, ox, oy, dw, dh, 0, 0, SCREEN_W, SCREEN_H, bgra, &bmi, DIB_RGB_COLORS, SRCCOPY); }
+          if (dw > 0 && dh > 0 && crt_on) {
+              if (crt_w != dw || crt_h != dh) { free(crt_buf); crt_buf = malloc((size_t)dw * dh * 4); crt_w = dw; crt_h = dh; }
+              BITMAPINFO cb = bmi; cb.bmiHeader.biWidth = dw; cb.bmiHeader.biHeight = -dh;
+              crt_render(crt_buf, dw, dh, fb, SCREEN_W, SCREEN_H);
+              StretchDIBits(dc, ox, oy, dw, dh, 0, 0, dw, dh, crt_buf, &cb, DIB_RGB_COLORS, SRCCOPY);
+          } else if (dw > 0 && dh > 0) StretchDIBits(dc, ox, oy, dw, dh, 0, 0, SCREEN_W, SCREEN_H, bgra, &bmi, DIB_RGB_COLORS, SRCCOPY); }
         EndPaint(h, &ps); return 0; }
     }
     return DefWindowProc(h, m, w, l);
