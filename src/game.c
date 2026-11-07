@@ -783,9 +783,10 @@ void game_change_energy(Game *g, int delta) { change_energy(g, delta); }
 /* Debug text for the window title (F12): data counts, target, last verb, door state. Returns 0 when the overlay is off. */
 int game_debug_text(const Game *g, char *buf, int n) {
     if (!g->dbg) return 0;
-    int len = snprintf(buf, (size_t)n, "EX %d RAN %d V%d P%d WALL51 %d", g->dbg_execs, g->dbg_ran, g->dbg_verb, g->dbg_pid, g->wallflag[51]);
+    int len = snprintf(buf, (size_t)n, "T");
+    for (int k = 0; k + 1 < g->dbg_ntr && len < n - 12; k += 2) len += snprintf(buf + len, (size_t)(n - len), " %02x/%02x", g->dbg_tr[k], g->dbg_tr[k + 1]);
+    len += snprintf(buf + len, (size_t)(n - len), " | EX %d RAN %d V%d P%d WALL51 %d", g->dbg_execs, g->dbg_ran, g->dbg_verb, g->dbg_pid, g->wallflag[51]);
     if (g->target >= 0 && g->target < g->rooms[g->cur].nobj) len += snprintf(buf + len, (size_t)(n - len), " TFLAGS %02x", g->rooms[g->cur].objs[g->target].flags);
-    len += snprintf(buf + len, (size_t)(n - len), " TRACE");
-    for (int k = 0; k + 1 < g->dbg_ntr && len < n - 8; k += 2) len += snprintf(buf + len, (size_t)(n - len), " %02x:%02x", g->dbg_tr[k], g->dbg_tr[k + 1]);
+    for (int k = 0; k < g->dbg_execs && k < 4 && len < n - 30; k++) len += snprintf(buf + len, (size_t)(n - len), " | tick %u v%u", g->dbg_log[k][0], g->dbg_log[k][1]);
     return 1;
 }

@@ -7,6 +7,7 @@
 #include <windows.h>
 #include <mmsystem.h>
 #include <stdio.h>
+#include <string.h>
 #include "game.h"
 
 #define SCALE 2
@@ -89,7 +90,10 @@ int WINAPI WinMain(HINSTANCE hi, HINSTANCE hp, LPSTR cmd, int show) {
         }
         audio_pump(g);
         game_render(g, fb);
-        { char dt[256]; SetWindowTextA(hw, game_debug_text(g, dt, sizeof dt) ? dt : "Cadaver (native)"); }
+        { static char last[512]; char dt[512];                      /* F12: debug line in the title and in cadaver_debug.txt */
+          int on = game_debug_text(g, dt, sizeof dt);
+          if (!on) strcpy(dt, "Cadaver (native)");
+          if (strcmp(dt, last)) { strcpy(last, dt); SetWindowTextA(hw, dt); if (on) { FILE *df = fopen("cadaver_debug.txt", "a"); if (df) { fprintf(df, "%s\n", dt); fclose(df); } } } }
         for (int i = 0; i < SCREEN_W * SCREEN_H; i++) { uint32_t v = fb[i]; bgra[i] = (v & 0xFF) << 16 | (v & 0xFF00) | (v >> 16 & 0xFF); }
         InvalidateRect(hw, NULL, FALSE); UpdateWindow(hw);
         Sleep(5);
