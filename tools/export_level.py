@@ -223,7 +223,7 @@ for s_ in range(112,122):
     e=L.g2.rec(s_)
     if not e or len(e)<0x30:continue
     tab=0x28+u16(e,0x22);fr=[]
-    for k in range(10):
+    for k in range(16):
         try:im=L.sprite(s_,k)
         except Exception:im=None
         if im is None:break

@@ -20,9 +20,9 @@
 typedef struct { int len; int8_t *data; } Sfx;
 typedef struct { int sfx; double pos, step; int vol; double left, total; } Voice;
 typedef struct { const SndEv *ev; int n, i, mv, snd; double t, el; } SeqVoice;   /* left = seconds before the voice is cut (0 = play to the end) */
-typedef struct { int state, w, h; int16_t f[5]; int push; int16_t fx, fy, fz, name; uint8_t c, b16, b17, b1d; uint8_t *px; int aw, ah, ax, ay; uint8_t *apx; int nfr; struct { int w, h, dx, dy; uint8_t *px; } fr[10]; } Sprite;
+typedef struct { int state, w, h; int16_t f[5]; int push; int16_t fx, fy, fz, name; uint8_t c, b16, b17, b1d; uint8_t *px; int aw, ah, ax, ay; uint8_t *apx; int nfr; struct { int w, h, dx, dy; uint8_t *px; } fr[16]; } Sprite;
 typedef struct { int16_t hx, hy; int w, h; uint8_t *px; } Frame;
-typedef struct { int x, y, z, slot, flags, pid, xflags, anim, atick, home, stage, vx, vy, life, hp; } Obj;   /* life > 0: a missile in flight; hp: remaining health of a creature (0 = not set yet) */
+typedef struct { int x, y, z, slot, flags, pid, xflags, anim, atick, home, stage, vx, vy, life, hp, lift; } Obj;   /* life > 0: a missile in flight; hp: remaining health of a creature (0 = not set yet) */
 #define MISSILE_SLOT 31          /* the thrown-rock image (16x7) */
 #define MISSILE_PID 9000
 #define MISSILE_SPEED 3
@@ -141,7 +141,7 @@ Game *game_load(const char *path) {
         { int ns = rd16(f); if (ns < 0 || ns > 30) ns = 0;              /* multi-frame creature images */
           for (int i = 0; i < ns; i++) { int sl = rd8(f), nf = rd8(f); Sprite *sp = &g->spr[sl]; sp->nfr = 0;
               for (int k = 0; k < nf; k++) { int w = rd16(f), h = rd16(f), dx = rds16(f), dy = rds16(f); uint8_t *px = malloc((size_t)w * h * 4); rd(f, px, (size_t)w * h * 4);
-                  if (k < 10) { sp->fr[k].w = w; sp->fr[k].h = h; sp->fr[k].dx = dx; sp->fr[k].dy = dy; sp->fr[k].px = px; sp->nfr = k + 1; } else free(px); } } }
+                  if (k < 16) { sp->fr[k].w = w; sp->fr[k].h = h; sp->fr[k].dx = dx; sp->fr[k].dy = dy; sp->fr[k].px = px; sp->nfr = k + 1; } else free(px); } } }
         { int nc = rd16(f); if (nc < 0 || nc > 64) nc = 0; g->nch = nc;         /* chest data: contents, key, flags, trap */
           for (int i = 0; i < nc; i++) { g->ch_pid[i] = (uint16_t)rd16(f); g->ch_cont[i] = (uint16_t)rd16(f); g->ch_key[i] = (uint16_t)rd16(f); g->ch_flags[i] = (uint8_t)rd8(f); g->ch_trap[i] = (uint8_t)rd8(f); } }
         g->has_scroll = 1;
@@ -713,6 +713,15 @@ void game_tick(Game *g, int joy) {
     if (g->hurt_cd > 0) g->hurt_cd--;
     for (int i = 0; i < r->nobj; i++) {                      /* water lurker (slot 116): ripples, surfaces, opens its mouth, sinks, then returns to the pool until the next timer. Frame order and timing are read off the emulator, not decoded */
         Obj *c = &r->objs[i]; if (g->spr[c->slot].nfr < 10 || c->home == g->cur) continue;
+        if (c->slot == 112 && g->spr[112].nfr >= 16) {          /* worm: 78-tick cycle read off the emulator: hop (frame 15, arc), crawl (frames 12/13 alternating), rest (frame 14); gone after 3 cycles */
+            static const int arc[10] = { 8, 18, 33, 46, 54, 52, 42, 28, 12, 0 };
+            int t = (c->stage + 60) % 78; c->stage++;   /* a fresh worm starts in its rest phase */
+            if (c->stage >= 78 * 3) { Obj back = *c; back.stage = 0; back.lift = 0; back.anim = 8; back.atick = 8; Room *hr = &g->rooms[back.home];
+                r->objs[i] = r->objs[--r->nobj]; if (hr->valid) hr->objs[hr->nobj++] = back; i--; continue; }
+            if (t < 30) { c->anim = 15; c->lift = arc[(t + 1) / 3 > 9 ? 9 : (t + 1) / 3]; }
+            else if (t < 60) { c->anim = ((t - 30) / 3) % 2 ? 13 : 12; c->lift = 0; }
+            else { c->anim = 14; c->lift = 0; }
+            continue; }
         static const struct { int f, t; } seq[] = { {8, 8}, {9, 8}, {0, 6}, {3, 6}, {4, 16}, {3, 6}, {0, 6}, {9, 8}, {8, 8} };
         if (--c->atick > 0) continue;
         c->stage++;
@@ -726,7 +735,7 @@ void game_tick(Game *g, int joy) {
         for (int i = 0; i < r->nobj && g->hurt_cd == 0; i++) {
             Obj *q = &r->objs[i]; int has = 0;
             for (int k = 0; k < g->nvm; k++) if (g->vm_pid[k] == (q->pid | 0x8000)) { has = 1; break; }
-            if (!has || (g->spr[q->slot].nfr && q->anim >= 8)) continue;
+            if (!has || (q->slot == 116 && q->anim >= 8)) continue;
             Box qb = box_of(g, q);
             if (qb.x1 + 1 < hb.x0 || hb.x1 + 1 < qb.x0 || qb.y1 + 1 < hb.y0 || hb.y1 + 1 < qb.y0 || qb.z1 < hb.z0 || hb.z1 < qb.z0) continue;
             for (int k = 0; k < g->nvm; k++) if (g->vm_pid[k] == (q->pid | 0x8000)) { run_script(g, q, g->vm_code[k], g->vm_len[k]); g->hurt_cd = 25; }
@@ -1022,7 +1031,7 @@ void game_render(const Game *g, uint32_t *fb) {
     DrawItem items[256]; int n = 0;
     for (int i = 0; i < r->nobj && n < 255; i++) {
         const Obj *o = &r->objs[i];
-        items[n++] = (DrawItem){ flat(g, o) ? -1000 : o->x + o->y, o->x, o->y, o->z, o->slot, 0, box_of(g, o), !flat(g, o), (o->flags & 1) && g->spr[o->slot].apx != NULL, g->spr[o->slot].nfr ? o->anim : -1 };
+        items[n++] = (DrawItem){ flat(g, o) ? -1000 : o->x + o->y, o->x, o->y, o->z + o->lift, o->slot, 0, box_of(g, o), !flat(g, o), (o->flags & 1) && g->spr[o->slot].apx != NULL, g->spr[o->slot].nfr ? o->anim : -1 };
     }
     for (int i = 0; i < r->nwalls && n < 255; i++) {
         const Wall *w = &r->walls[i]; const Sprite *s = &g->spr[w->slot];
