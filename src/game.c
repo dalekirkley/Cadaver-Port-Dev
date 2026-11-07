@@ -806,6 +806,7 @@ void game_tick(Game *g, int joy) {
         for (int k = 0; g->lvl1 && k < (int)(sizeof walk / sizeof walk[0]); k++) if (walk[k].slot == sl && g->spr[sl].nfr >= walk[k].base[3] + walk[k].nf)
             c->anim = walk[k].base[c->mdir] + (g->tickno / walk[k].ticks) % walk[k].nf;
         if (g->lvl1 && sl == 118 && g->spr[118].nfr >= 5) c->anim = g->tickno % 12 < 4 ? 4 : 2; }      /* hovering creature of room 21: frame 4 for 4 ticks then frame 2 for 8 (emulator), whichever way it moves */
+    if (g->lvl1 && g->cur == 36) { int t = (g->tickno - g->ent_tick) % 211; if ((t == 16 || t == 68) && !((g->gbits >> 3) & 1)) change_energy(g, -20); }   /* the dragon's lightning hurts after the flash (unless global bit 3 $984 is set) */
     if (g->hurt_cd == 0) {                                  /* contact scripts (event 9 with the hero): creatures, fires, spikes. Original posts it every tick of contact; measured in the emulator: a spider costs 2 energy every tick (1 per video frame), no cooldown */
         Box hb = box_of(g, h);
         for (int i = 0; i < r->nobj && g->hurt_cd == 0; i++) {
@@ -1205,8 +1206,8 @@ void game_render(const Game *g, uint32_t *fb) {
     }
     if (g->inv_mode && g->ninv) draw_rucksack(g, fb);
     else if (g->hud) draw_energy(g, fb);
-    if (g->lvl1 && g->cur == 36) {                                   /* dragon room lightning (the dragon's behaviour routine $96364 calls service $1c = palette flash: the 16 colours alternate white/black in a checker pattern for 16 video frames); measured calls at 0, 103, 422, 525 video frames after load = ticks 0, 52 of every 211 */
-        int t = (g->tickno - g->ent_tick) % 211, ph = t < 8 ? t : (t >= 52 && t < 60) ? t - 52 : -1;
+    if (g->lvl1 && g->cur == 36) {                                   /* dragon room lightning (the dragon's behaviour routine $96364 calls service $1c = palette flash: the 16 colours alternate white/black in a checker pattern for 32 video frames = 16 ticks, then the routine costs the hero 20 energy: BP on $10836 showed -20 at frames 3232, 3335, 3654 for calls at 3200, 3303, 3622); calls at 0, 103, 422, 525 video frames after load = ticks 0, 52 of every 211 */
+        int t = (g->tickno - g->ent_tick) % 211, ph = t < 16 ? t : (t >= 52 && t < 68) ? t - 52 : -1;
         if (ph >= 0) {
             static const uint8_t pat[16] = { 1, 0, 0, 1, 1, 0, 0, 0, 1, 1, 1, 0, 0, 1, 1, 0 };
             for (int i = 0; i < SCREEN_W * SCREEN_H; i++) {
