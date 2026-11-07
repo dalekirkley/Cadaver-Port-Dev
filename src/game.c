@@ -1172,7 +1172,7 @@ void game_render(const Game *g, uint32_t *fb) {
             if (w > 108) { int t = 50 - g->msg_t; sc = t * (w - 108) / 40; if (sc > w - 108) sc = w - 108; if (sc < 0) sc = 0; }   /* scroll when wider than the strip */
             draw_text_clip(g, fb, g->text[nm], 202, 186, w > 108 ? w : 108, 202, 311, sc);
         } else {
-            draw_text(g, fb, buf, 205, 186, 108);
+            draw_text(g, fb, buf, r->prefix >= 0 && r->prefix < g->ntext ? 202 : 205, 186, 108);   /* names with a prefix word sit 3 px further left in the original */
             if (!g->inv_mode && nm >= 0 && nm < g->ntext) draw_text(g, fb, g->text[nm], 229, 172, 84);
         }
         if (g->has_icons) for (int i = 0; i < g->nverbs; i++) {                       /* verb icons in the six HUD slots */
