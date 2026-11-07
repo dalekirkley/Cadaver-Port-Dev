@@ -473,7 +473,20 @@ static void exec_verb(Game *g, int verb) {
             for (int i = 0; i < g->nhid && !got; i++) if (g->hid[i].o.pid == id) { o2 = g->hid[i].o; g->hid[i] = g->hid[--g->nhid]; got = 1; }
             for (int rm = 0; rm < 100 && !got; rm++) { Room *r2 = &g->rooms[rm]; if (!r2->valid || rm == g->cur) continue;
                 for (int i = 0; i < r2->nobj; i++) if (r2->objs[i].pid == id) { o2 = r2->objs[i]; r2->objs[i] = r2->objs[--r2->nobj]; got = 1; break; } }
-            if (got) { o2.flags &= ~0x80; o2.x = ch->x; o2.y = ch->y; o2.z = ch->z; r->objs[r->nobj++] = o2; ch = &r->objs[g->target]; }
+            if (got) {                                                                  /* pop out beside the chest (far side from the hero first), else on its lid */
+                o2.flags &= ~0x80; const Sprite *cs = &g->spr[ch->slot], *is = &g->spr[o2.slot];
+                int fdx = (g->facing & JOY_RIGHT) ? 1 : (g->facing & JOY_LEFT) ? -1 : 0, fdy = (g->facing & JOY_DOWN) ? 1 : (g->facing & JOY_UP) ? -1 : 0;
+                int cand[4][2] = { { fdx, fdy }, { fdy, fdx }, { -fdy, -fdx }, { -fdx, -fdy } }, placed = 0;
+                for (int c = 0; c < 4 && !placed; c++) {
+                    if (!cand[c][0] && !cand[c][1]) continue;
+                    Obj t = o2; t.z = ch->z;
+                    t.x = ch->x + (cand[c][0] > 0 ? is->fx : cand[c][0] < 0 ? -cs->fx : 0); t.y = ch->y + (cand[c][1] > 0 ? is->fy : cand[c][1] < 0 ? -cs->fy : 0);
+                    if (t.x >= r->sx * 8 || t.y >= r->sy * 8 || t.x - is->fx + 1 < MARGIN || t.y - is->fy + 1 < MARGIN) continue;
+                    Box tb = box_of(g, &t); int hit = overlap(tb, box_of(g, &g->hero));
+                    for (int i = 0; i < r->nobj && !hit; i++) { if (&r->objs[i] == ch || flat(g, &r->objs[i])) continue; if (overlap(tb, box_of(g, &r->objs[i]))) hit = 1; }
+                    if (!hit) { o2 = t; placed = 1; } }
+                if (!placed) { o2.x = ch->x; o2.y = ch->y; o2.z = ch->z + cs->fz; }
+                r->objs[r->nobj++] = o2; ch = &r->objs[g->target]; }
             g->ch_cont[ci] = 0;
         }
         if (!(ch->flags & 1)) {
