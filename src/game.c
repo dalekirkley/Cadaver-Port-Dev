@@ -292,22 +292,21 @@ static void vm_op(Vm *m, int op) {
     case 0x20: m->self->flags |= 1; break;
     case 0x21: m->self->flags ^= 1; break;
     case 0x22: { int id = vm_word(m), has = 0; for (int i = 0; i < g->ninv; i++) if (g->inv[i] == id) has = 1; m->cond = has ? m->cond + 1 : 0; break; }
-    case 0x27: { int n = m->c[m->p++]; g->counter[n] = (uint8_t)(g->counter[n] + m->c[m->p++]); break; }
-    case 0x28: { int n = m->c[m->p++], mode = m->c[m->p++], v = m->c[m->p++], x = g->counter[n];
+    case 0x27: { int n = m->c[m->p]; int add = m->c[m->p + 1]; m->p += 2; g->counter[n] = (uint8_t)(g->counter[n] + add); break; }
+    case 0x28: { int n = m->c[m->p], mode = m->c[m->p + 1], v = m->c[m->p + 2], x = g->counter[n]; m->p += 3;
         int ok = mode == 0 ? x <= v : mode == 1 ? x >= v : mode == 2 ? x != v : x == v;      /* modes as in $107aa: 0 le, 1 ge, 2 ne, 3 eq */
         m->cond = ok ? m->cond + 1 : 0; break; }
     case 0x1b: { int w = m->c[m->p++]; int v = vm_word(m); if (w < MAX_WALLIDX) { g->wallflag[w] = (uint16_t)v; if (v) g->walldoor[w] = 1; } break; }
     case 0x0a: { int w = m->c[m->p++]; if (w < MAX_WALLIDX && g->wallflag[w]) { g->wallflag[w] = 0; play_sound(g, 0x12); } break; }
     case 0x1c: { int t = vm_word(m); if (t < g->ntext && g->text[t][0]) { snprintf(g->scroll_str, sizeof g->scroll_str, "%s", g->text[t]); g->scroll_t = SCROLL_TICKS; } break; }
     case 0x2d: { int d = vm_word(m); if (d >= 32768) d -= 65536; change_energy(g, d); break; }
-    case 0x46: play_sound(g, m->c[m->p++]); break;
+    case 0x46: { int snd = m->c[m->p]; m->p++; play_sound(g, snd); break; }
     case 0x0e: {
         if (m->cond) {                                                /* run the then part, then skip an else part */
             m->cond = 0; m->p++; vm_block(m);
             if (!m->stop && m->p < m->len && m->c[m->p] == 0x0f) { m->p++; m->p += m->c[m->p]; }
         } else {
             m->cond = 0; int l = m->c[m->p]; int p0 = m->p; m->p += l;
-            if (g->dbg_ntr < 40) { g->dbg_tr[g->dbg_ntr++] = 0xf0; g->dbg_tr[g->dbg_ntr++] = (unsigned char)l; g->dbg_tr[g->dbg_ntr++] = 0xf1; g->dbg_tr[g->dbg_ntr++] = (unsigned char)p0; g->dbg_tr[g->dbg_ntr++] = 0xf2; g->dbg_tr[g->dbg_ntr++] = (unsigned char)m->p; g->dbg_tr[g->dbg_ntr++] = 0xf3; g->dbg_tr[g->dbg_ntr++] = (unsigned char)(m->p < m->len ? m->c[m->p] : 0xee); g->dbg_tr[g->dbg_ntr++] = 0xf4; g->dbg_tr[g->dbg_ntr++] = (unsigned char)m->len; }
             if (m->p < m->len && m->c[m->p] == 0x0f) { m->p += 2; vm_block(m); }
         }
         break; }
@@ -316,7 +315,7 @@ static void vm_op(Vm *m, int op) {
 }
 static void run_script(Game *g, Obj *self, const uint8_t *c, int len) {
     Vm m = { g, self, c, len, 0, 0, 0 };
-    while (!m.stop && m.p < m.len) vm_op(&m, c[m.p++]);
+    while (!m.stop && m.p < m.len) { int op = c[m.p]; m.p++; vm_op(&m, op); }   /* no side effect inside the call's argument: MSVC evaluated the argument after the callee read p */
 }
 
 static void say(Game *g, int text_id);
