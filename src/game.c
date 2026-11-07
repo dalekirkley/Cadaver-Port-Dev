@@ -896,7 +896,7 @@ static void project(const Game *g, int org, int x, int y, int z, const int16_t *
     int bl = base / 40, bb = base % 40; if (bb < 0) { bb += 40; bl--; }
     int off = g->sub[ys * 8 + xs][0], sh = g->sub[ys * 8 + xs][1];
     int ol = (int)lrint((double)off / 40.0), ob = off - 40 * ol;
-    *px = (bb + ob) * 8 + sh - 16 * (F[1] - 1);
+    *px = (bb + ob) * 8 + sh - 16 * (F[1] - 1) + 16 - 2 * (((F[2] - 1) & 7) + 1);   /* + footprint-width term: measured in room 62 (gaol) against the emulator: dx = 16 - 2 * width, width wrapping at the 8-unit cell (exact for 7 object types) */
     *py = bl + ol - (z - F[0] + F[2] + F[3] + F[4]);
 }
 
