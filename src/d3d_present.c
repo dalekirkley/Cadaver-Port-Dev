@@ -24,7 +24,8 @@ static const char *HLSL =
 /* sharp bilinear: nearest-like pixels with only the edges smoothed */
 "float4 ps_plain(VSOut i) : SV_Target {\n"
 "  float2 p = i.uv * srcSize; float2 pi = floor(p); float2 f = p - pi;\n"
-"  float2 f2 = saturate((f - 0.5) * scale + 0.5);\n"
+"  float2 rr = 0.5 - 0.5 / scale; float2 cd = f - 0.5;\n"
+"  float2 f2 = (cd - clamp(cd, -rr, rr)) * scale + 0.5;\n"
 "  return float4(tex.SampleLevel(lin, (pi + f2) / srcSize, 0).rgb, 1); }\n"
 "float3 L(int2 c) { c = clamp(c, int2(0, 0), int2(srcSize) - 1); return pow(tex.Load(int3(c, 0)).rgb, 2.4); }\n"
 /* CRT: gaussian scanline beams that widen with brightness, RGB aperture grille, halation, linear-light blending */
