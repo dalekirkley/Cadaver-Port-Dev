@@ -461,7 +461,7 @@ static int try_exit(Game *g, int dx, int dy) {
             x = (((nx - MARGIN) & ~7) == 0) ? nr->sx * 8 - 1 : MARGIN + HERO_FX;
         }
         h->z = (((h->z >> 4) + r->basez - nr->basez) << 4) | (h->z & 15);
-        h->x = x; h->y = y; g->cur = n; if (w->idx < MAX_WALLIDX && g->walldoor[w->idx]) play_sound(g, 0x38); return 1;                 /* door sound only for exits that have a door graphic (the lever clunk stands in) */
+        h->x = x; h->y = y; g->cur = n; if (w->slot < 4) play_sound(g, 0x38); return 1;                 /* door sound only for header doorways (wall slots 0-3; the lever clunk stands in) */
     }
     return 0;
 }
@@ -1006,7 +1006,7 @@ void game_render(const Game *g, uint32_t *fb) {
     }
     for (int i = 0; i < r->nwalls && n < 255; i++) {
         const Wall *w = &r->walls[i]; const Sprite *s = &g->spr[w->slot];
-        if (s->state == 1 && s->h > 1 && (wall_closed(g, w) || (w->idx < MAX_WALLIDX && g->walldoor[w->idx]))) items[n++] = (DrawItem){ -999, w->wx + s->fx - 1, w->wy + s->fy - 1, (w->z - r->basez) * 16, w->slot, 0, {0}, 0, 0, -1 };   /* door slabs sit in the far walls: always behind the hero and objects */
+        if (s->state == 1 && s->h > 1) items[n++] = (DrawItem){ -999, w->wx + s->fx - 1, w->wy + s->fy - 1, (w->z - r->basez) * 16, w->slot, 0, {0}, 0, 0, -1 };   /* door slabs sit in the far walls: always behind the hero and objects */
     }
     items[n++] = (DrawItem){ g->hero.x + g->hero.y, g->hero.x, g->hero.y, g->hero.z, 8, 1, box_of(g, &g->hero), 1 };
     qsort(items, n, sizeof items[0], cmp_item);
