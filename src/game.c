@@ -38,7 +38,7 @@ struct Game {
     Obj hero;                         /* hero.slot = 8 */
     int facing, anim_t, moving;
     uint8_t font[46 * 24], fontmap[32]; char **text; int ntext; int day; int energy; int jump_t, jump_z0;
-    int has_scroll; uint8_t scroll_tiles[18 * 32], scroll_map[0x30], font5[46 * 20]; int nexam, nuse, ntake; uint16_t take_pid[512]; int16_t take_gold[512], take_xp[512]; uint8_t counter[256]; int nhid; struct { int room; Obj o; } hid[128]; int hurt_cd; int want_level; int pull_pid, pull_room; int spawn_pid; int dbg, dbg_verb, dbg_pid, dbg_ran, dbg_execs; unsigned dbg_log[4][3]; unsigned char dbg_tr[48]; int dbg_ntr; int nvm; uint16_t vm_pid[256]; uint8_t vm_len[256], vm_code[256][255]; uint16_t exam_pid[512], exam_text[512], use_pid[512], use_text[512];   /* examine scroll */
+    int has_scroll; uint8_t scroll_tiles[18 * 32], scroll_map[0x30], font5[46 * 20]; int nexam, nuse, ntake; uint16_t take_pid[512]; int16_t take_gold[512], take_xp[512]; uint8_t counter[256]; int nhid; struct { int room; Obj o; } hid[128]; int hurt_cd; int want_level; int pull_pid, pull_room; int spawn_pid; int rs_period[100], rs_nb[100]; uint8_t *rs_blk[100][8]; int tm_room, tm_left; int dbg, dbg_verb, dbg_pid, dbg_ran, dbg_execs; unsigned dbg_log[4][3]; unsigned char dbg_tr[48]; int dbg_ntr; int nvm; uint16_t vm_pid[256]; uint8_t vm_len[256], vm_code[256][255]; uint16_t exam_pid[512], exam_text[512], use_pid[512], use_text[512];   /* examine scroll */
     int scroll_t; char scroll_str[256]; long score; int map_open, map_px, map_py, status_open; long gold, xp, level; uint8_t visited[100];
     int has_icons; uint8_t icons[20 * 112]; uint16_t slotpos[8][4]; uint8_t verbtab[16];
     int target, nverbs, verbs[8], menu, sel, prev_joy, msg, msg_t, ninv, inv[64], inv_slot[64], inv_mode, inv_sel, inv_hold;     /* verb menu state */
@@ -125,6 +125,10 @@ Game *game_load(const char *path) {
         { int na = rd16(f); if (na < 0 || na > 255) na = 0;          /* second sprite image (lever pulled) */
           for (int i = 0; i < na; i++) { int sl = rd8(f); Sprite *sp = &g->spr[sl]; sp->aw = rd16(f); sp->ah = rd16(f); sp->apx = malloc((size_t)sp->aw * sp->ah * 4); rd(f, sp->apx, (size_t)sp->aw * sp->ah * 4); } }
         { int na = rd16(f); if (na < 0 || na > 255) na = 0; for (int i = 0; i < na; i++) { int sl = rd8(f); int ax = rds16(f), ay = rds16(f); g->spr[sl].ax = ax; g->spr[sl].ay = ay; } }   /* alt image offsets (optional) */
+        { int nr = rd16(f); if (nr < 0 || nr > 100) nr = 0;            /* room scripts (timed events) */
+          for (int i = 0; i < nr; i++) { int rn = rd8(f), per = rd8(f), nb = rd8(f); if (rn >= 100) rn = 0; g->rs_period[rn] = per; g->rs_nb[rn] = 0;
+              for (int b = 0; b < nb; b++) { int ln = rd8(f); uint8_t *p = malloc(ln ? ln : 1); if (ln > 0) rd(f, p, (size_t)ln);
+                  if (g->rs_nb[rn] < 8) g->rs_blk[rn][g->rs_nb[rn]++] = p; else free(p); } } }
         g->has_scroll = 1;
     }
     fclose(f);
@@ -298,6 +302,14 @@ static void vm_op(Vm *m, int op) {
         break; }
     case 0x05: { int d = (int8_t)m->c[m->p]; m->p++; g->gold += d; if (g->gold < 0) g->gold = 0; play_sound(g, d < 0 ? 0x24 : 0x1a); break; }   /* add gold ($ffa0) */
     case 0x33: { int n = m->c[m->p]; m->p++; if (n <= 9) g->want_level = n + 2; m->stop = 1; break; }              /* go to level n+2 ($10098) */
+    case 0x24: { int id = vm_word(m); int x = m->c[m->p], y = m->c[m->p + 1], z = m->c[m->p + 2]; m->p += 4;   /* move/spawn a placement into the current room ($104b4) */
+        Room *cr = &g->rooms[g->cur]; Obj o2; int got = 0;
+        for (int i = 0; i < cr->nobj; i++) if (cr->objs[i].pid == id) return;
+        for (int i = 0; i < g->nhid && !got; i++) if (g->hid[i].o.pid == id) { o2 = g->hid[i].o; g->hid[i] = g->hid[--g->nhid]; got = 1; }
+        for (int rm = 0; rm < 100 && !got; rm++) { Room *r2 = &g->rooms[rm]; if (!r2->valid || rm == g->cur) continue;
+            for (int i = 0; i < r2->nobj; i++) if (r2->objs[i].pid == id) { o2 = r2->objs[i]; r2->objs[i] = r2->objs[--r2->nobj]; got = 1; break; } }
+        if (!got) return;
+        o2.flags &= ~0x80; o2.x = x; o2.y = y; o2.z = z << 4; cr->objs[cr->nobj++] = o2; break; }
     case 0x25: { int n = m->c[m->p], dx = m->c[m->p + 1], dy = m->c[m->p + 2], dz = m->c[m->p + 3]; m->p += 4;   /* create an object next to the target ($10546) */
         Room *rr = &g->rooms[g->cur]; Obj no2; memset(&no2, 0, sizeof no2);
         no2.slot = n; no2.x = m->self->x + dx; no2.y = m->self->y + dy; no2.z = m->self->z + dz; no2.pid = 1000 + g->spawn_pid++;
@@ -514,6 +526,12 @@ void game_tick(Game *g, int joy) {
     if (fire_edge && !g->menu) g->pull_pid = 0;                 /* fire ends pull mode (choosing MOVE itself happens inside the menu below) */
     int prev = g->prev_joy; g->prev_joy = joy;
     g->visited[g->cur] = 1;
+    if (g->tm_room != g->cur + 1) { g->tm_room = g->cur + 1; g->tm_left = g->rs_period[g->cur] * 17; }          /* room timer restarts on entry */
+    else if (g->tm_left > 0 && --g->tm_left == 0) {
+        g->tm_left = g->rs_period[g->cur] * 17;
+        for (int b = 0; b < g->rs_nb[g->cur]; b++) { const uint8_t *c = g->rs_blk[g->cur][b]; if ((c[1] & 0x7f) != 0x0e) continue;
+            Vm m = { g, &g->hero, c, c[0], 2, 0, 0 }; vm_block(&m); }
+    }
     if (g->status_open) { if ((joy & 0x1F) && !(prev & 0x1F)) g->status_open = 0; return; }              /* diary panel: waits for a key ($9d68) */
     if ((joy & JOY_DEBUG) && !(prev & JOY_DEBUG)) g->dbg ^= 1;
     { int ed = (joy & ~prev);                                                                  /* rucksack: Space = single item, Return = grid, H = hold */

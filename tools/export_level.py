@@ -203,4 +203,18 @@ for s in alt:
 P('H',len(alt))
 for s in alt:
     e=L.g2.rec(s);tab=0x28+u16(e,0x22);P('Bhh',s,s16(e,tab+8+2)-s16(e,tab+2),s16(e,tab+8+4)-s16(e,tab+4))
+# room scripts (timed events): [n] then per room: room, period, nblocks, blocks (len + raw bytes incl. length byte)
+rs=[]
+for n in range(100):
+    rm=L.g3.rec(n)
+    if len(rm)<0x20:continue
+    q=0x20;bl=[]
+    for _ in range(rm[0x1f]):
+        if q>=len(rm) or rm[q]==0:break
+        ln=rm[q];bl.append(bytes(rm[q:q+ln]));q+=ln
+    rs.append((n,rm[2],bl))
+P('H',len(rs))
+for n,per,bl in rs:
+    P('BBB',n,per,len(bl))
+    for b in bl:P('B',len(b));o+=b
 open(out,'wb').write(o);print(len(o),'bytes,',len(exam),'examine texts')
