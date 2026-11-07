@@ -11,12 +11,14 @@
 #include <stdlib.h>
 #include "game.h"
 #include "crt.h"
+#include "d3d_present.h"
 
 #define SCALE 2
 static BITMAPINFO bmi;
 static uint32_t fb[SCREEN_W * SCREEN_H];
 static uint32_t bgra[SCREEN_W * SCREEN_H];
 static int running = 1;
+static int use_d3d = 0;                                                      /* Direct3D 11 presenter; GDI is the fallback */
 static int crt_on = 0; static uint32_t *crt_buf; static int crt_w, crt_h;   /* F2 toggles the CRT filter */
 static int pending_level = 0;   /* F6..F10 = load data\\levelN.bin */
 #define AUDIO_RATE 22050
@@ -73,9 +75,11 @@ static LRESULT CALLBACK wndproc(HWND h, UINT m, WPARAM w, LPARAM l) {
         if (w == WMSZ_LEFT || w == WMSZ_TOPLEFT || w == WMSZ_BOTTOMLEFT) rc->left = rc->right - (cw + bw); else rc->right = rc->left + cw + bw;
         if (w == WMSZ_TOP || w == WMSZ_TOPLEFT || w == WMSZ_TOPRIGHT) rc->top = rc->bottom - (ch + bh); else rc->bottom = rc->top + ch + bh;
         return TRUE; }
+    case WM_SIZE: if (use_d3d && w != SIZE_MINIMIZED) d3d_resize(LOWORD(l), HIWORD(l)); return 0;
     case WM_ERASEBKGND: return 1;
     case WM_PAINT: {
         PAINTSTRUCT ps; HDC dc = BeginPaint(h, &ps); RECT rc; GetClientRect(h, &rc);
+        if (use_d3d) { EndPaint(h, &ps); return 0; }
         { int cw = rc.right, ch = rc.bottom, dw = cw, dh = cw * SCREEN_H / SCREEN_W;      /* keep the 320x200 aspect: letterbox with black bars */
           if (dh > ch) { dh = ch; dw = ch * SCREEN_W / SCREEN_H; }
           int ox = (cw - dw) / 2, oy = (ch - dh) / 2;
@@ -103,6 +107,7 @@ int WINAPI WinMain(HINSTANCE hi, HINSTANCE hp, LPSTR cmd, int show) {
     HWND hw = CreateWindowA("CadaverNative", "Cadaver (native)", WS_OVERLAPPEDWINDOW | WS_VISIBLE, CW_USEDEFAULT, CW_USEDEFAULT, r.right - r.left, r.bottom - r.top, NULL, NULL, hi, NULL);
     bmi.bmiHeader.biSize = sizeof bmi.bmiHeader; bmi.bmiHeader.biWidth = SCREEN_W; bmi.bmiHeader.biHeight = -SCREEN_H;
     bmi.bmiHeader.biPlanes = 1; bmi.bmiHeader.biBitCount = 32; bmi.bmiHeader.biCompression = BI_RGB;
+    if (!getenv("CADAVER_GDI")) use_d3d = d3d_init(hw, SCREEN_W, SCREEN_H);          /* set CADAVER_GDI=1 to force the old GDI path */
     timeBeginPeriod(1); audio_init();
     LARGE_INTEGER fq, t0; QueryPerformanceFrequency(&fq); QueryPerformanceCounter(&t0);
     double next = 0, tick = 1.0 / TICK_HZ;
@@ -123,9 +128,13 @@ int WINAPI WinMain(HINSTANCE hi, HINSTANCE hp, LPSTR cmd, int show) {
           int on = game_debug_text(g, dt, sizeof dt);
           if (!on) strcpy(dt, "Cadaver (native)");
           if (strcmp(dt, last)) { strcpy(last, dt); SetWindowTextA(hw, dt); if (on) { FILE *df = fopen("cadaver_debug.txt", "a"); if (df) { fprintf(df, "%s\n", dt); fclose(df); } } } }
-        for (int i = 0; i < SCREEN_W * SCREEN_H; i++) { uint32_t v = fb[i]; bgra[i] = (v & 0xFF) << 16 | (v & 0xFF00) | (v >> 16 & 0xFF); }
-        InvalidateRect(hw, NULL, FALSE); UpdateWindow(hw);
+        if (use_d3d) d3d_present(fb, crt_on);
+        else {
+            for (int i = 0; i < SCREEN_W * SCREEN_H; i++) { uint32_t v = fb[i]; bgra[i] = (v & 0xFF) << 16 | (v & 0xFF00) | (v >> 16 & 0xFF); }
+            InvalidateRect(hw, NULL, FALSE); UpdateWindow(hw);
+        }
         Sleep(5);
     }
+    if (use_d3d) d3d_shutdown();
     timeEndPeriod(1); game_free(g); return 0;
 }
