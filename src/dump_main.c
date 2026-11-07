@@ -17,7 +17,7 @@ int main(int argc, char **argv) {
     char *s = strdup(argv[2]); char *tok = strtok(s, ",");
     while (tok) {
         int joy = 0; char *p = tok;
-        for (; *p && isalpha((unsigned char)*p); p++) joy |= *p == 'U' ? JOY_UP : *p == 'D' ? JOY_DOWN : *p == 'L' ? JOY_LEFT : *p == 'R' ? JOY_RIGHT : *p == 'F' ? JOY_FIRE : *p == 'M' ? JOY_MAP : 0;
+        for (; *p && isalpha((unsigned char)*p); p++) joy |= *p == 'U' ? JOY_UP : *p == 'D' ? JOY_DOWN : *p == 'L' ? JOY_LEFT : *p == 'S' ? JOY_INV : *p == 'N' ? JOY_LIST : *p == 'H' ? JOY_HOLD : *p == 'R' ? JOY_RIGHT : *p == 'F' ? JOY_FIRE : *p == 'M' ? JOY_MAP : 0;
         int n = atoi(p);
         for (int i = 0; i < n; i++) game_tick(g, joy);
         int x, y, z; game_hero(g, &x, &y, &z); printf("%s -> room %d hero (%d,%d,%d)\n", tok, game_room(g), x, y, z);

@@ -41,7 +41,7 @@ struct Game {
     int has_scroll; uint8_t scroll_tiles[18 * 32], scroll_map[0x30], font5[46 * 20]; int nexam, nuse, ntake; uint16_t take_pid[512]; int16_t take_gold[512], take_xp[512]; uint8_t counter[256]; int nhid; struct { int room; Obj o; } hid[128]; int hurt_cd; int want_level; int pull_pid, pull_room; int spawn_pid; int dbg, dbg_verb, dbg_pid, dbg_ran, dbg_execs; unsigned dbg_log[4][3]; unsigned char dbg_tr[48]; int dbg_ntr; int nvm; uint16_t vm_pid[256]; uint8_t vm_len[256], vm_code[256][255]; uint16_t exam_pid[512], exam_text[512], use_pid[512], use_text[512];   /* examine scroll */
     int scroll_t; char scroll_str[256]; long score; int map_open, map_px, map_py, status_open; long gold, xp, level; uint8_t visited[100];
     int has_icons; uint8_t icons[20 * 112]; uint16_t slotpos[8][4]; uint8_t verbtab[16];
-    int target, nverbs, verbs[8], menu, sel, prev_joy, msg, msg_t, ninv, inv[64];     /* verb menu state */
+    int target, nverbs, verbs[8], menu, sel, prev_joy, msg, msg_t, ninv, inv[64], inv_slot[64], inv_mode, inv_sel, inv_hold;     /* verb menu state */
     uint16_t wallflag[MAX_WALLIDX]; uint8_t walldoor[MAX_WALLIDX]; int bump_timer;    /* wall-record flags, shared by the two rooms a wall joins */
     unsigned tickno; int walk_ticks, walk_step, start_room; Obj start_hero;
     Sfx sfx[65]; Voice voice[4];
@@ -332,6 +332,24 @@ static void run_script(Game *g, Obj *self, const uint8_t *c, int len) {
 }
 
 static void say(Game *g, int text_id);
+
+/* Rucksack: examine / drop an item by index. */
+static void inv_examine(Game *g, int idx) {
+    int pid = g->inv[idx];
+    for (int i = 0; i < g->nexam; i++) if (g->exam_pid[i] == pid && g->exam_text[i] < g->ntext && g->text[g->exam_text[i]][0]) {
+        snprintf(g->scroll_str, sizeof g->scroll_str, "%s.", g->text[g->exam_text[i]]); g->scroll_t = SCROLL_TICKS; return; }
+    int nm = g->spr[g->inv_slot[idx]].name; if (nm >= 0 && nm < g->ntext) { snprintf(g->scroll_str, sizeof g->scroll_str, "%s.", g->text[nm]); g->scroll_t = SCROLL_TICKS; }
+}
+static void inv_remove(Game *g, int idx) {
+    memmove(&g->inv[idx], &g->inv[idx + 1], (size_t)(g->ninv - idx - 1) * sizeof(int)); memmove(&g->inv_slot[idx], &g->inv_slot[idx + 1], (size_t)(g->ninv - idx - 1) * sizeof(int)); g->ninv--;
+    if (g->inv_sel >= g->ninv) g->inv_sel = g->ninv ? g->ninv - 1 : 0;
+}
+static void inv_drop(Game *g, int idx) {
+    Room *r = &g->rooms[g->cur]; Obj o; memset(&o, 0, sizeof o); o.pid = g->inv[idx]; o.slot = g->inv_slot[idx]; o.x = g->hero.x; o.y = g->hero.y; o.z = g->hero.z;
+    if (g->inv_hold == o.pid) g->inv_hold = -1;
+    if (r->nobj < 4000) r->objs[r->nobj++] = o;                          /* objs arrays have 32 spare entries; stay conservative below */
+    inv_remove(g, idx); play_sound(g, 0);
+}
 /* Leaving the room through an exit wall; returns 1 if the room changed. */
 static int try_exit(Game *g, int dx, int dy) {
     Room *r = &g->rooms[g->cur]; Obj *h = &g->hero;
@@ -351,7 +369,7 @@ static int try_exit(Game *g, int dx, int dy) {
         if (wall_closed(g, w) && w->idx < MAX_WALLIDX && g->wallflag[w->idx] != 0xffff) {
             int key = g->wallflag[w->idx];                        /* locked door: the key item's placement id is the flag value */
             for (int i = 0; i < g->ninv; i++) if (g->inv[i] == key) {
-                if (w->b7 & 2) { memmove(&g->inv[i], &g->inv[i + 1], (size_t)(g->ninv - i - 1) * sizeof(int)); g->ninv--; }   /* key consumed */
+                if (w->b7 & 2) { memmove(&g->inv[i], &g->inv[i + 1], (size_t)(g->ninv - i - 1) * sizeof(int)); memmove(&g->inv_slot[i], &g->inv_slot[i + 1], (size_t)(g->ninv - i - 1) * sizeof(int)); g->ninv--; }   /* key consumed */
                 g->wallflag[w->idx] = 0;                              /* the door stays unlocked after the key is used (a consumed key could never reopen it) */
                 play_sound(g, 18); say(g, 1); key = 0; break;
             }
@@ -404,7 +422,7 @@ static void exec_verb(Game *g, int verb) {
               if (g->take_gold[i]) { g->gold += g->take_gold[i]; play_sound(g, 3); }
               if (g->take_xp[i]) { g->xp += g->take_xp[i]; if (g->xp < 0) g->xp = 0; if (!g->take_gold[i]) play_sound(g, 0x1a); }
               break; } }
-        g->inv[g->ninv++] = r->objs[g->target].pid;
+        g->inv_slot[g->ninv] = r->objs[g->target].slot; g->inv[g->ninv++] = r->objs[g->target].pid;
         if (g->spr[r->objs[g->target].slot].name >= 0) say(g, g->spr[r->objs[g->target].slot].name);   /* original prints the item name */
         memmove(&r->objs[g->target], &r->objs[g->target + 1], (size_t)(r->nobj - g->target - 1) * sizeof(Obj)); r->nobj--;
         g->target = -1; g->nverbs = 0; return;
@@ -495,8 +513,24 @@ void game_tick(Game *g, int joy) {
     if (fire_edge && !g->menu) g->pull_pid = 0;                 /* fire ends pull mode (choosing MOVE itself happens inside the menu below) */
     int prev = g->prev_joy; g->prev_joy = joy;
     g->visited[g->cur] = 1;
-    if (g->status_open) { if ((joy & 0xCF) && !(prev & 0xCF)) g->status_open = 0; return; }              /* diary panel: waits for a key ($9d68) */
+    if (g->status_open) { if ((joy & 0x1F) && !(prev & 0x1F)) g->status_open = 0; return; }              /* diary panel: waits for a key ($9d68) */
     if ((joy & JOY_DEBUG) && !(prev & JOY_DEBUG)) g->dbg ^= 1;
+    { int ed = (joy & ~prev);                                                                  /* rucksack: Space = single item, Return = grid, H = hold */
+      if ((ed & JOY_INV) && g->ninv) { g->inv_mode = g->inv_mode == 1 ? 0 : 1; g->menu = 0; if (g->inv_sel >= g->ninv) g->inv_sel = 0; }
+      else if ((ed & JOY_LIST) && g->ninv) { g->inv_mode = g->inv_mode == 2 ? 1 : 2; g->menu = 0; if (g->inv_sel >= g->ninv) g->inv_sel = 0; }
+      if (g->inv_mode && !g->ninv) g->inv_mode = 0;
+      if (g->inv_mode && g->scroll_t <= 0) {
+          int nd = (joy & 15) & ~(prev & 15), n = g->ninv, step = g->inv_mode == 2 ? 4 : 1;
+          if (nd & JOY_RIGHT) g->inv_sel = (g->inv_sel + 1) % n;
+          if (nd & JOY_LEFT) g->inv_sel = (g->inv_sel + n - 1) % n;
+          if (g->inv_mode == 2) { if ((nd & JOY_DOWN) && g->inv_sel + step < n) g->inv_sel += step; if ((nd & JOY_UP) && g->inv_sel - step >= 0) g->inv_sel -= step; }
+          if (ed & JOY_HOLD) g->inv_hold = (g->inv_hold == g->inv[g->inv_sel]) ? -1 : g->inv[g->inv_sel];
+          if (ed & JOY_FIRE) inv_examine(g, g->inv_sel);
+          if ((ed & JOY_DOWN) && g->inv_mode == 1) { inv_drop(g, g->inv_sel); }
+      }
+      if (g->inv_mode == 1) { g->nverbs = 2; g->verbs[0] = 0xb; g->verbs[1] = 5; } else if (g->inv_mode == 2) g->nverbs = 0;
+      if (g->inv_mode && g->scroll_t <= 0) return;
+    }
     if ((joy & JOY_MAP) && !(prev & JOY_MAP) && g->has_scroll) { g->map_open ^= 1; g->map_px = g->map_py = 0; }     /* F1: map of the rooms entered so far */
     if (g->map_open) {                                                                          /* the game waits; the joystick pans the view (1 cell per tick), fire closes it ($a3e8..$a4dc) */
         g->map_px += ((joy & JOY_RIGHT) ? 1 : 0) - ((joy & JOY_LEFT) ? 1 : 0); g->map_py += ((joy & JOY_DOWN) ? 1 : 0) - ((joy & JOY_UP) ? 1 : 0);
@@ -643,6 +677,36 @@ static void draw_text_clip(const Game *g, uint32_t *fb, const char *str, int x, 
 }
 static void draw_text(const Game *g, uint32_t *fb, const char *str, int x, int y, int width) { draw_text_clip(g, fb, str, x, y, width, 0, SCREEN_W, 0); }
 
+/* Rucksack display (verified in the original for the single-item view): a 34x34 box at (266,142), background colour 14, the item's sprite centred in it, the item name in the bottom strip. */
+static void blit_px(uint32_t *fb, const uint8_t *px, int w, int h, int x0, int y0) {
+    for (int y = 0; y < h; y++) for (int x = 0; x < w; x++) {
+        const uint8_t *p = px + (y * w + x) * 4; if (!p[3]) continue; int X = x0 + x, Y = y0 + y;
+        if (X < 0 || Y < 0 || X >= SCREEN_W || Y >= SCREEN_H) continue;
+        fb[Y * SCREEN_W + X] = p[0] | p[1] << 8 | p[2] << 16 | 0xFF000000u; }
+}
+static void fill_box(const Game *g, uint32_t *fb, int x0, int y0, int w, int h, int idx) {
+    uint32_t c = g->pal[idx][0] | g->pal[idx][1] << 8 | g->pal[idx][2] << 16 | 0xFF000000u;
+    for (int y = y0; y < y0 + h; y++) for (int x = x0; x < x0 + w; x++) if (x >= 0 && y >= 0 && x < SCREEN_W && y < SCREEN_H) fb[y * SCREEN_W + x] = c;
+}
+static void draw_rucksack(const Game *g, uint32_t *fb) {
+    int sel = g->inv_sel; const Sprite *s = &g->spr[g->inv_slot[sel]];
+    if (g->inv_mode == 2) {                                                                   /* whole rucksack: grid of item boxes over the room */
+        int cols = 4, x0 = 96, y0 = 24;
+        fill_box(g, fb, x0 - 6, y0 - 6, (g->ninv < cols ? g->ninv : cols) * 36 + 12, ((g->ninv + cols - 1) / cols) * 36 + 12, 0);
+        for (int i = 0; i < g->ninv; i++) {
+            int bx = x0 + (i % cols) * 36, by = y0 + (i / cols) * 36; const Sprite *q = &g->spr[g->inv_slot[i]];
+            fill_box(g, fb, bx, by, 34, 34, i == sel ? 10 : 14);
+            fill_box(g, fb, bx + 1, by + 1, 32, 32, 14);
+            if (q->state == 1 && q->px) blit_px(fb, q->px, q->w, q->h, bx + 17 - q->w / 2, by + 17 - q->h / 2);
+            if (g->inv[i] == g->inv_hold) fill_box(g, fb, bx + 1, by + 1, 4, 4, 10);
+        }
+    }
+    fill_box(g, fb, 266, 142, 34, 34, 0); fill_box(g, fb, 267, 143, 32, 32, 14);
+    if (s->state == 1 && s->px) blit_px(fb, s->px, s->w, s->h, 283 - s->w / 2, 159 - s->h / 2);
+    if (g->inv[sel] == g->inv_hold) fill_box(g, fb, 268, 144, 4, 4, 10);
+    if (s->name >= 0 && s->name < g->ntext) { fill_box(g, fb, 205, 185, 108, 8, 0); draw_text(g, fb, g->text[s->name], 205, 186, 108); }
+}
+
 /* ---- examine scroll: parchment built from 8x8 tiles (layout table at $55e8), text in the 5-row font, word-wrapped like the original ($dc98). */
 static void scroll_tile(const Game *g, uint32_t *fb, int idx, int x0, int y0) {
     for (int r = 0; r < 8; r++) for (int c = 0; c < 8; c++) {
@@ -781,7 +845,7 @@ void game_render(const Game *g, uint32_t *fb) {
     if (g->text) {
         char buf[96];
         snprintf(buf, sizeof buf, "%s %d", g->ntext > 29 ? g->text[29] : "DAY", g->day);
-        draw_text(g, fb, buf, 252, 158, 60);
+        if (!g->inv_mode) draw_text(g, fb, buf, 252, 158, 60);
         buf[0] = 0;
         if (r->prefix >= 0 && r->prefix < g->ntext) { strncat(buf, g->text[r->prefix], 40); strcat(buf, " "); }
         if (r->name < 19 && 126 + r->name < g->ntext) strncat(buf, g->text[126 + r->name], 40);
@@ -793,7 +857,7 @@ void game_render(const Game *g, uint32_t *fb) {
             draw_text_clip(g, fb, g->text[nm], 202, 186, w > 108 ? w : 108, 202, 311, sc);
         } else {
             draw_text(g, fb, buf, 205, 186, 108);
-            if (nm >= 0 && nm < g->ntext) draw_text(g, fb, g->text[nm], 229, 172, 84);
+            if (!g->inv_mode && nm >= 0 && nm < g->ntext) draw_text(g, fb, g->text[nm], 229, 172, 84);
         }
         if (g->has_icons) for (int i = 0; i < g->nverbs; i++) {                       /* verb icons in the six HUD slots */
             int ic = g->verbs[i], sx = g->slotpos[i][0], sy = g->slotpos[i][1];
@@ -815,7 +879,8 @@ void game_render(const Game *g, uint32_t *fb) {
             }
         }   /* measured against the original: 3 px right of the nominal box */
     }
-    if (g->hud) draw_energy(g, fb);
+    if (g->inv_mode && g->ninv) draw_rucksack(g, fb);
+    else if (g->hud) draw_energy(g, fb);
     if (g->scroll_t > 0) draw_scroll(g, fb);
     if (g->map_open && g->has_scroll) draw_map(g, fb);
     if (g->status_open && g->has_scroll) draw_status(g, fb);

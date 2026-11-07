@@ -14,7 +14,10 @@
 #define JOY_RIGHT 8
 #define JOY_DEBUG 0x80                     /* F12: debug overlay */
 #define JOY_MAP 0x40                       /* map key (F1): toggles the visited-rooms panel */
-#define JOY_FIRE 0x80
+#define JOY_FIRE 0x10
+#define JOY_INV 0x20                       /* Space: single item view of the rucksack */
+#define JOY_LIST 0x100                     /* Return: whole rucksack grid */
+#define JOY_HOLD 0x200                     /* H: pick up / put down the selected hand item */
 
 typedef struct Game Game;
 Game *game_load(const char *path);          /* returns NULL on error */
