@@ -1161,7 +1161,7 @@ void game_render(const Game *g, uint32_t *fb) {
         if (!g->inv_mode) draw_text(g, fb, buf, 252, 158, 60);
         buf[0] = 0;
         if (r->prefix >= 0 && r->prefix < g->ntext) { strncat(buf, g->text[r->prefix], 40); strcat(buf, " "); }
-        if (r->name < 19 && 126 + r->name < g->ntext) strncat(buf, g->text[126 + r->name], 40);
+        if (r->name < 200 && 126 + r->name < g->ntext) strncat(buf, g->text[126 + r->name], 40);
         int nm = g->msg_t > 0 ? g->msg : (g->target >= 0 ? g->spr[r->objs[g->target].slot].name : -1);
         int longmsg = nm >= 0 && nm < g->ntext && (int)strlen(g->text[nm]) * 7 > 84;      /* too wide for the item box: use the room-name strip */
         if (longmsg) {

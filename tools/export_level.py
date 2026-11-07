@@ -119,9 +119,12 @@ P('B',1);o+=bytes(L.game[0x4c22-0xb8:0x4c22-0xb8+46*24]);o+=bytes(L.game[0x560e-
 P('H',len(T))
 for t in T:
     b=t.replace('\n','\r').encode('latin1','replace');P('H',len(b));o+=b
+# Room-name strings follow the spell names, whose count differs per level (level 1: ARMOURY is id 126 after SUICIDE; level 4: TOWER is 128).
+# The port reads text[126 + name], so store the name byte shifted by (first name id - 126).
+nb=(T.index('SUICIDE')+1-126) if 'SUICIDE' in T else 0
 for n in range(100):
     r=L.room(n)
-    if r:P('Bh',r['raw'][0x1a],s16(r['raw'],0x18))
+    if r:P('Bh',r['raw'][0x1a] if r['raw'][0x1a]>=100 else r['raw'][0x1a]+nb,s16(r['raw'],0x18))
     else:P('Bh',255,-1)
 # verb icons (16x14, plane-major 4 planes of 14 words, 20 icons) + slot table ($59a6: x,y,w,h words) + verb->icon list for $17 types ($5604)
 ip=os.environ.get('CADAVER_ICONS')
