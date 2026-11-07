@@ -9,14 +9,32 @@
 typedef struct { int x, y, w, h; uint8_t *px; } Img;                       /* RGBA */
 typedef struct { Img base; int n, nseq; Img *im; uint8_t *seq; } Flame;
 struct Intro {
-    Img logos, title, text; Flame fl[2]; int nfl;
+    Img logos, title, text, story; Flame fl[2]; int nfl;
     int clip, rest, first, rest_abs;
     int frame;                                                              /* 50 Hz frames since the start */
     int16_t *pcm; unsigned npcm, prate; double apos;                       /* title tune (optional) */
     int held;                                                               /* a key was still down at the start: wait for release */
 };
 #define LOGO_FRAMES 100                                                      /* 2 s: the original shows them while loading */
-#define END_FRAMES 150                                                       /* stays on the finished title 3 s, then moves on */
+/* Story timeline (50 Hz title frames, measured from the original): the credits rest, then everything scrolls up half a pixel per frame
+ * through the text column; at each '!' marker the scroll stops for 1208 frames. S = scroll distance in pixels. */
+#define STORY_T0 1416
+#define STORY_REST 1208
+#define STORY_END 1400
+static const int STORY_STOPS[5] = {125, 239, 371, 485, 599};
+#define PANE_TOP 40
+static int story_scroll(int t) {
+    if (t < STORY_T0) return 0;
+    int s = 0, tt = STORY_T0;
+    for (int i = 0; i < 5; i++) {
+        int d = STORY_STOPS[i] - s;
+        if (t < tt + d * 2) return s + (t - tt) / 2;
+        tt += d * 2; s = STORY_STOPS[i];
+        if (t < tt + STORY_REST) return s;
+        tt += STORY_REST;
+    }
+    return s + (t - tt) / 2;
+}
 
 static int rd(FILE *f, void *p, size_t n) { return fread(p, 1, n, f) == n; }
 static int rd_img(FILE *f, Img *im, int has_pos) {
@@ -40,7 +58,9 @@ Intro *intro_load(const char *path) {
         fl->nseq = ns; fl->seq = malloc(ns ? ns : 1); ok = fl->seq && rd(f, fl->seq, ns);
     }
     uint16_t pr[4]; ok = ok && rd_img(f, &in->text, 1) && rd(f, pr, 8);
+    long audio_pos = ok ? ftell(f) : 0;
     if (ok) { uint32_t hd[2]; if (rd(f, hd, 8) && hd[1] < 5000000) { in->pcm = malloc((size_t)hd[1] * 2 + 2); if (in->pcm && rd(f, in->pcm, (size_t)hd[1] * 2)) { in->npcm = hd[1]; in->prate = hd[0]; } else { free(in->pcm); in->pcm = NULL; } } }
+    if (ok && audio_pos) { in->story.w = 0; if (!rd_img(f, &in->story, 0)) { free(in->story.px); memset(&in->story, 0, sizeof in->story); } }   /* optional scrolling story */
     fclose(f);
     if (!ok) { intro_free(in); return NULL; }
     in->clip = pr[0]; in->rest = pr[1]; in->first = pr[2]; in->rest_abs = pr[3];
@@ -48,21 +68,22 @@ Intro *intro_load(const char *path) {
 }
 void intro_free(Intro *in) {
     if (!in) return;
-    free(in->logos.px); free(in->title.px); free(in->text.px); free(in->pcm);
+    free(in->logos.px); free(in->title.px); free(in->text.px); free(in->story.px); free(in->pcm);
     for (int i = 0; i < 2; i++) { for (int k = 0; k < in->fl[i].n; k++) free(in->fl[i].im[k].px); free(in->fl[i].im); free(in->fl[i].seq); }
     free(in);
 }
 int intro_tick(Intro *in, int joy) {
     if (!in) return 1;
-    if (in->frame == 0) in->held = joy != 0;
-    if (!joy) in->held = 0;
+    if (in->frame == 0) in->held = (joy & JOY_INV) != 0;
+    if (!(joy & JOY_INV)) in->held = 0;
     in->frame += 2;
-    if (joy && !in->held && in->frame > 4) return 1;                         /* any key or fire skips */
-    return in->frame > LOGO_FRAMES + in->rest_abs + END_FRAMES;
+    if ((joy & JOY_INV) && !in->held && in->frame > 4) return 1;             /* the intro runs until space is pressed */
+    if (in->story.px && in->frame - LOGO_FRAMES - STORY_T0 > 0 && story_scroll(in->frame - LOGO_FRAMES) > STORY_END) { in->frame = LOGO_FRAMES; in->apos = 0; }   /* story finished: back to the title */
+    return 0;
 }
-static void put(uint32_t *fb, const Img *im, int ox, int oy, int clip_y) {
+static void put(uint32_t *fb, const Img *im, int ox, int oy, int clip_y, int top) {
     for (int y = 0; y < im->h; y++) {
-        int sy = oy + y; if (sy < 0 || sy >= SCREEN_H || sy >= clip_y) continue;
+        int sy = oy + y; if (sy < top || sy >= SCREEN_H || sy >= clip_y) continue;
         for (int x = 0; x < im->w; x++) {
             int sx = ox + x; if (sx < 0 || sx >= SCREEN_W) continue;
             const uint8_t *p = im->px + ((size_t)y * im->w + x) * 4; if (!p[3]) continue;
@@ -72,13 +93,14 @@ static void put(uint32_t *fb, const Img *im, int ox, int oy, int clip_y) {
 }
 void intro_render(const Intro *in, uint32_t *fb) {
     memset(fb, 0, sizeof(uint32_t) * SCREEN_W * SCREEN_H);
-    if (in->frame < LOGO_FRAMES) { put(fb, &in->logos, 0, 0, SCREEN_H); return; }
+    if (in->frame < LOGO_FRAMES) { put(fb, &in->logos, 0, 0, SCREEN_H, 0); return; }
     int t = in->frame - LOGO_FRAMES;                                          /* title frames, the first title frame is original frame 15 */
-    put(fb, &in->title, 0, 0, SCREEN_H);
+    put(fb, &in->title, 0, 0, SCREEN_H, 0);
     for (int i = 0; i < in->nfl; i++) { const Flame *fl = &in->fl[i]; if (!fl->nseq) continue;
-        int k = t < fl->nseq ? t : fl->nseq / 2 + (t - fl->nseq / 2) % (fl->nseq - fl->nseq / 2); int id = fl->seq[k]; if (id < fl->n) put(fb, &fl->im[id], fl->im[id].x, fl->im[id].y, SCREEN_H); }
-    int off = in->rest > t ? (in->rest - t) / 2 : 0;
-    put(fb, &in->text, in->text.x, in->text.y + off, in->clip);
+        int k = t < fl->nseq ? t : fl->nseq / 2 + (t - fl->nseq / 2) % (fl->nseq - fl->nseq / 2); int id = fl->seq[k]; if (id < fl->n) put(fb, &fl->im[id], fl->im[id].x, fl->im[id].y, SCREEN_H, 0); }
+    int off = in->rest > t ? (in->rest - t) / 2 : 0, sc = story_scroll(t);
+    put(fb, &in->text, in->text.x, in->text.y + off - sc, in->clip, sc ? PANE_TOP : 0);
+    if (in->story.px && sc) put(fb, &in->story, 69, 164 - sc, in->clip, PANE_TOP);
 }
 
 void intro_audio_mix(Intro *in, int16_t *out, int n, int rate) {              /* the title tune, resampled with linear interpolation */
