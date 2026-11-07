@@ -692,7 +692,11 @@ static void creature_move(Game *g, Room *r, Obj *c) {
     int st0 = g->mv_step[pid][0] ? g->mv_step[pid][0] : 1, st1 = g->mv_step[pid][1] ? g->mv_step[pid][1] : 1, st2 = g->mv_step[pid][2] ? g->mv_step[pid][2] : 1;
     int nx = c->x + d[0] * st0, ny = c->y + d[1] * st1;
     if (!creature_free(g, r, c, nx, ny)) { c->mc[0] = -c->mc[0]; c->mc[1] = -c->mc[1]; c->mc[2] = -c->mc[2]; return; }
-    c->x = nx; c->y = ny; c->z += d[2] * st2;
+    { int ox = c->x, oy = c->y;
+      c->x = nx; c->y = ny; c->z += d[2] * st2;
+      Obj *hh = &g->hero; Box cb = box_of(g, c), hb = box_of(g, hh);                       /* a creature that walks into the hero carries it along (emulator: the hero's position followed a spider for 50 frames while in contact) */
+      if (!(cb.x1 + 1 < hb.x0 || hb.x1 + 1 < cb.x0 || cb.y1 + 1 < hb.y0 || hb.y1 + 1 < cb.y0 || cb.z1 < hb.z0 || hb.z1 < cb.z0)
+          && (nx != ox || ny != oy) && creature_free(g, r, hh, hh->x + (nx - ox), hh->y + (ny - oy))) { hh->x += nx - ox; hh->y += ny - oy; } }
     for (int i = 0; i < 3; i++) if (c->mc[i]) c->mc[i] += c->mc[i] > 0 ? -1 : 1;
     if (d[0] > 0) c->mdir = 0; else if (d[0] < 0) c->mdir = 3; else if (d[1] > 0) c->mdir = 1; else if (d[1] < 0) c->mdir = 2;
 }
