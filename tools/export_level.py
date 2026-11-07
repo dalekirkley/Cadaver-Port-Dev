@@ -252,8 +252,8 @@ for pid in range(L.g6.n):
     if len(p)<0x14 or not 112<=u16(p,6)<=123:continue
     d=p[0xd]
     if d+0xe>=len(p):continue
-    mv.append((pid,p[d+6],p[d+7],p[d+8],bytes(p[d+0xe:d+0xe+96])))
+    mv.append((pid,p[d+6],p[d+7],p[d+8],p[d+9],bytes(p[d+0xe:d+0xe+96])))
 P('H',len(mv))
-for pid,s0,s1,s2,pr in mv:
-    P('HBBBB',pid,s0,s1,s2,len(pr));o+=pr
+for pid,s0,s1,s2,pat,pr in mv:
+    P('HBBBBB',pid,s0,s1,s2,pat,len(pr));o+=pr
 open(out,'wb').write(o);print(len(o),'bytes,',len(exam),'examine texts')
