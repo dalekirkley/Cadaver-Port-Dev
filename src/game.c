@@ -20,7 +20,7 @@
 typedef struct { int len; int8_t *data; } Sfx;
 typedef struct { int sfx; double pos, step; int vol; double left, total; } Voice;
 typedef struct { const SndEv *ev; int n, i, mv, snd; double t, el; } SeqVoice;   /* left = seconds before the voice is cut (0 = play to the end) */
-typedef struct { int state, w, h; int16_t f[5]; int push; int16_t fx, fy, fz, name; uint8_t c, b16, b17, b1d; uint8_t *px; int aw, ah, ax, ay; uint8_t *apx; int nfr; struct { int w, h, dx, dy; uint8_t *px; } fr[16]; } Sprite;
+typedef struct { int state, w, h; int16_t f[5]; int push; int16_t fx, fy, fz, name; uint8_t c, b16, b17, b1d; uint8_t *px; int aw, ah, ax, ay, f0x, f0y; uint8_t *apx; int nfr; struct { int w, h, dx, dy; uint8_t *px; } fr[16]; } Sprite;
 typedef struct { int16_t hx, hy; int w, h; uint8_t *px; } Frame;
 typedef struct { int x, y, z, slot, flags, pid, xflags, anim, atick, home, stage, vx, vy, life, hp, lift, mpc, mwait, mstop, mc[3], mdir, skey, macc; } Obj;   /* life > 0: a missile in flight; hp: remaining health of a creature (0 = not set yet) */
 #define MISSILE_SLOT 31          /* the thrown-rock image (16x7) */
@@ -47,7 +47,7 @@ struct Game {
     Obj hero;                         /* hero.slot = 8 */
     int facing, anim_t, moving;
     uint8_t font[46 * 24], fontmap[32]; char **text; int ntext; int day; int energy; int jump_t, jump_z0;
-    int has_scroll; uint8_t scroll_tiles[18 * 32], scroll_map[0x30], font5[46 * 20]; int nexam, nuse, ntake; uint16_t take_pid[512]; int16_t take_gold[512], take_xp[512]; uint8_t counter[256], gflag[256]; uint32_t gbits; int nhid; struct { int room; Obj o; } hid[128]; int hurt_cd; unsigned rng_seed, rng_last; int ent_tick; int want_level; int pull_pid, pull_room; int spawn_pid; int rs_period[100], rs_nb[100]; uint8_t *rs_blk[100][16]; int tm_room, tm_left; uint8_t mv_prog[512][96]; uint8_t mv_len[512], mv_step[512][3], mv_pat[512]; int lvl1; int nch; uint16_t ch_pid[64], ch_cont[64], ch_key[64]; uint8_t ch_flags[64], ch_trap[64]; int dbg, dbg_verb, dbg_pid, dbg_ran, dbg_execs; unsigned dbg_log[4][3]; unsigned char dbg_tr[48]; int dbg_ntr; int nvm; uint16_t vm_pid[256]; uint8_t vm_len[256], vm_code[256][255]; uint16_t exam_pid[512], exam_text[512], use_pid[512], use_text[512];   /* examine scroll */
+    int has_scroll; uint8_t scroll_tiles[18 * 32], scroll_map[0x30], font5[46 * 20]; int nexam, nuse, ntake; uint16_t take_pid[512]; int16_t take_gold[512], take_xp[512]; uint8_t counter[256], gflag[256]; uint32_t gbits; int nhid; struct { int room; Obj o; } hid[128]; int hurt_cd; unsigned rng_seed, rng_last; int ent_tick; uint8_t rs_done[100][16]; int want_level; int pull_pid, pull_room; int spawn_pid; int rs_period[100], rs_nb[100]; uint8_t *rs_blk[100][16]; int tm_room, tm_left; uint8_t mv_prog[512][96]; uint8_t mv_len[512], mv_step[512][3], mv_pat[512]; int lvl1; int nch; uint16_t ch_pid[64], ch_cont[64], ch_key[64]; uint8_t ch_flags[64], ch_trap[64]; int dbg, dbg_verb, dbg_pid, dbg_ran, dbg_execs; unsigned dbg_log[4][3]; unsigned char dbg_tr[48]; int dbg_ntr; int nvm; uint16_t vm_pid[256]; uint8_t vm_len[256], vm_code[256][255]; uint16_t exam_pid[512], exam_text[512], use_pid[512], use_text[512];   /* examine scroll */
     int scroll_t; char scroll_str[256]; long score; int map_open, map_px, map_py, status_open; long gold, xp, level; uint8_t visited[100];
     int has_icons; uint8_t icons[20 * 112]; uint16_t slotpos[8][4]; uint8_t verbtab[16];
     int target, nverbs, verbs[8], menu, sel, prev_joy, msg, msg_t, ninv, inv[64], inv_slot[64], inv_mode, inv_sel, inv_hold;     /* verb menu state */
@@ -151,6 +151,8 @@ Game *game_load(const char *path) {
               if (pid >= 0 && pid < 512 && ln > 0) { memcpy(g->mv_prog[pid], tmp, (size_t)(ln > 96 ? 96 : ln)); g->mv_len[pid] = (uint8_t)(ln > 96 ? 96 : ln); g->mv_step[pid][0] = (uint8_t)s0; g->mv_step[pid][1] = (uint8_t)s1; g->mv_step[pid][2] = (uint8_t)s2; g->mv_pat[pid] = (uint8_t)pat; } } }
         if (rd8(f) == 1) { int hx = rd16(f), hy = rd16(f), hw = rd16(f), hh = rd16(f);              /* held-item panel (optional, after the movement programs) */
             if (hw > 0 && hh > 0 && hw <= SCREEN_W && hh <= SCREEN_H) { g->held_ov = malloc((size_t)hw * hh * 4); if (g->held_ov && rd(f, g->held_ov, (size_t)hw * hh * 4)) { g->held_x = hx; g->held_y = hy; g->held_w = hw; g->held_h = hh; } else { free(g->held_ov); g->held_ov = NULL; } } }
+        if (rd8(f) == 1) { int nf = rd16(f); if (nf < 0 || nf > 255) nf = 0;                           /* frame-0 image offsets (optional, last section): slot, dx, dy of the first image record */
+            for (int i = 0; i < nf; i++) { int sl = rd8(f); int dx = rds16(f), dy = rds16(f); g->spr[sl].f0x = dx; g->spr[sl].f0y = dy; } }
         g->has_scroll = 1;
     }
     fclose(f);
@@ -731,6 +733,7 @@ void game_tick(Game *g, int joy) {
     else if (g->tm_left > 0 && --g->tm_left == 0) {
         g->tm_left = g->rs_period[g->cur] * 17;
         for (int b = 0; b < g->rs_nb[g->cur]; b++) { const uint8_t *c = g->rs_blk[g->cur][b]; if ((c[1] & 0x7f) != 0x0e) continue;
+            if (!(c[1] & 0x80)) { if (g->rs_done[g->cur][b]) continue; g->rs_done[g->cur][b] = 1; }   /* timer blocks without bit 7 fire once (level 4's "the way back closes" cover), those with it repeat (respawns) */
             Vm m = { g, &g->hero, c, c[0], 2, 0, 0 }; vm_block(&m); }
     }
     if (g->status_open) { if ((joy & 0x1F) && !(prev & 0x1F)) g->status_open = 0; return; }              /* diary panel: waits for a key ($9d68) */
@@ -1150,9 +1153,9 @@ void game_render(const Game *g, uint32_t *fb) {
             const Frame *fr = &g->frames[hero_frame(g) % g->nframes];
             blit(fb, fr->px, fr->w, fr->h, px + 2 + fr->hx, py + fr->hy);
         } else if (d->fr >= 0 && d->fr < s->nfr) { blit(fb, s->fr[d->fr].px, s->fr[d->fr].w, s->fr[d->fr].h, px + s->fr[d->fr].dx, py + s->fr[d->fr].dy);
-        } else if (d->alt) blit(fb, s->apx, s->aw, s->ah, px + xo + s->ax, py + s->ay);
+        } else if (d->alt) blit(fb, s->apx, s->aw, s->ah, px + xo + s->f0x + s->ax, py + s->f0y + s->ay);
         else if (s->state == 1 && d->key == -999 && d->slot < 2) blit_door(fb, s, d->slot, px, py);
-        else if (s->state == 1) blit(fb, s->px, s->w, s->h, px + xo, py);
+        else if (s->state == 1) blit(fb, s->px, s->w, s->h, px + xo + s->f0x, py + s->f0y);
     }
     if (g->hud) { blit(fb, g->hud, SCREEN_W, SCREEN_H, 0, 0); }     /* bottom panel frame over the room */
     if (g->text) {

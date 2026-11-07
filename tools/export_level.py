@@ -272,4 +272,14 @@ for yy in range(hh):
         solid=hud[138+yy,xx,3]==255
         hov+=bytes(L.rgb[k])+bytes([255 if solid else 0])
 P('B',1);P('HHHH',0,138,hw,hh);o+=bytes(hov)
+# frame-0 image offsets (optional, last section): the first image record of a multi-image sprite carries its own dx, dy (e.g. level 4's
+# floor-tile covers, slot 107: +1, +2), added to the object's projected position. Hero (slot 8) and creature frames use their own tables.
+f0=[]
+for s_ in range(255):
+    e=L.g2.rec(s_)
+    if s_==8 or not e or len(e)<0x30 or s16(e,0x18)>=0 or not e[0x0c]&4 or e[0x20]==0:continue
+    tab=0x28+u16(e,0x22);dx,dy=s16(e,tab+2),s16(e,tab+4)
+    if (dx or dy) and abs(dx)<64 and abs(dy)<64:f0.append((s_,dx,dy))
+P('B',1);P('H',len(f0))
+for s_,dx,dy in f0:P('Bhh',s_,dx,dy)
 open(out,'wb').write(o);print(len(o),'bytes,',len(exam),'examine texts')
