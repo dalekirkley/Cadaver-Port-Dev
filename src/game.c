@@ -423,7 +423,7 @@ static int try_exit(Game *g, int dx, int dy) {
             x = (((nx - MARGIN) & ~7) == 0) ? nr->sx * 8 - 1 : MARGIN + HERO_FX;
         }
         h->z = (((h->z >> 4) + r->basez - nr->basez) << 4) | (h->z & 15);
-        h->x = x; h->y = y; g->cur = n; play_sound(g, 0x38); return 1;                 /* door sound (not in the original's trace: the lever clunk stands in) */
+        h->x = x; h->y = y; g->cur = n; if (w->idx < MAX_WALLIDX && g->walldoor[w->idx]) play_sound(g, 0x38); return 1;                 /* door sound only for exits that have a door graphic (the lever clunk stands in) */
     }
     return 0;
 }
