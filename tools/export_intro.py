@@ -1,5 +1,5 @@
 """Export the title/intro sequence to data/intro.bin.
-usage: python3 export_intro.py <frames_dir> <out.bin>
+usage: python3 export_intro.py <frames_dir> <out.bin> [music.wav]
 frames_dir holds frame_NNNN.ppm (640x400) from the emulator running the CLEAN Disk 1 for 283 frames, every frame dumped:
   cd jt; DUMP=$(seq -s, 1 1 283) ./hl2 "<disk1>" "<disk2>" 284
 The title appears at frame 15 (logos before it), candle flames change every frame, the credits text rises 1 px per 2 frames
@@ -35,4 +35,9 @@ fin=A(283);m=(np.abs(fin-base).sum(axis=2)>0);m[:60,:]=False;m[:,:40]=False;m[:,
 ys,xs=np.where(m);x0,y0,x1,y1=xs.min(),ys.min(),xs.max(),ys.max()
 img(rgba(fin[y0:y1+1,x0:x1+1],m[y0:y1+1,x0:x1+1]),int(x0),int(y0))
 o+=struct.pack('<HHHH',160,195,44-15,210-15)      # clip y, rest frame (title frames), first visible, rest absolute
+if len(sys.argv)>3:
+    # title music: the emulator's WAV capture (44.1 kHz stereo, the title tune is on the left channel only, 0.1 s .. 8.1 s) -> mono 22.05 kHz int16
+    w=np.fromfile(sys.argv[3],dtype=np.int16,offset=44).reshape(-1,2)[:int(8.3*44100),0].astype(np.int32)
+    w=((w[0::2]+w[1::2])//2)[:len(w)//2].astype(np.int16)
+    o+=struct.pack('<II',22050,len(w))+w.tobytes()
 open(out,'wb').write(o);print(len(o),'bytes; text',x0,y0,x1,y1,'flame images',[len(s[0]) for s in seqs])

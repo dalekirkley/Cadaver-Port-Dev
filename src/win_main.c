@@ -34,10 +34,10 @@ static void audio_init(void) {
     have_audio = 1;
     for (int i = 0; i < ABUF; i++) { whdr[i].lpData = (LPSTR)abuf[i]; whdr[i].dwBufferLength = sizeof abuf[i]; waveOutPrepareHeader(wo, &whdr[i], sizeof whdr[i]); whdr[i].dwFlags |= WHDR_DONE; }
 }
-static void audio_pump(Game *g) {
+static void audio_pump(Game *g, Intro *in) {
     if (!have_audio) return;
     for (int i = 0; i < ABUF; i++) if (whdr[i].dwFlags & WHDR_DONE) {
-        game_audio_mix(g, abuf[i], ASAMPLES, AUDIO_RATE);
+        if (in) intro_audio_mix(in, abuf[i], ASAMPLES, AUDIO_RATE); else game_audio_mix(g, abuf[i], ASAMPLES, AUDIO_RATE);
         whdr[i].dwFlags &= ~WHDR_DONE; waveOutWrite(wo, &whdr[i], sizeof whdr[i]);
     }
 }
@@ -144,7 +144,7 @@ int WINAPI WinMain(HINSTANCE hi, HINSTANCE hp, LPSTR cmd, int show) {
             char p[64]; snprintf(p, sizeof p, "data\\level%d.bin", pending_level); pending_level = 0;
             Game *ng = game_load(p); if (ng) { game_free(g); g = ng; g_game = g; next = t; }
         }
-        if (!intro) audio_pump(g);
+        audio_pump(g, intro);
         if (intro) intro_render(intro, fb); else game_render(g, fb);
         { static char last[512]; char dt[512];                      /* F12: debug line in the title and in cadaver_debug.txt */
           int on = game_debug_text(g, dt, sizeof dt);

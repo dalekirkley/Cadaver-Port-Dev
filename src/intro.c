@@ -12,6 +12,7 @@ struct Intro {
     Img logos, title, text; Flame fl[2]; int nfl;
     int clip, rest, first, rest_abs;
     int frame;                                                              /* 50 Hz frames since the start */
+    int16_t *pcm; unsigned npcm, prate; double apos;                       /* title tune (optional) */
     int held;                                                               /* a key was still down at the start: wait for release */
 };
 #define LOGO_FRAMES 100                                                      /* 2 s: the original shows them while loading */
@@ -39,6 +40,7 @@ Intro *intro_load(const char *path) {
         fl->nseq = ns; fl->seq = malloc(ns ? ns : 1); ok = fl->seq && rd(f, fl->seq, ns);
     }
     uint16_t pr[4]; ok = ok && rd_img(f, &in->text, 1) && rd(f, pr, 8);
+    if (ok) { uint32_t hd[2]; if (rd(f, hd, 8) && hd[1] < 5000000) { in->pcm = malloc((size_t)hd[1] * 2 + 2); if (in->pcm && rd(f, in->pcm, (size_t)hd[1] * 2)) { in->npcm = hd[1]; in->prate = hd[0]; } else { free(in->pcm); in->pcm = NULL; } } }
     fclose(f);
     if (!ok) { intro_free(in); return NULL; }
     in->clip = pr[0]; in->rest = pr[1]; in->first = pr[2]; in->rest_abs = pr[3];
@@ -46,7 +48,7 @@ Intro *intro_load(const char *path) {
 }
 void intro_free(Intro *in) {
     if (!in) return;
-    free(in->logos.px); free(in->title.px); free(in->text.px);
+    free(in->logos.px); free(in->title.px); free(in->text.px); free(in->pcm);
     for (int i = 0; i < 2; i++) { for (int k = 0; k < in->fl[i].n; k++) free(in->fl[i].im[k].px); free(in->fl[i].im); free(in->fl[i].seq); }
     free(in);
 }
@@ -77,4 +79,12 @@ void intro_render(const Intro *in, uint32_t *fb) {
         int k = t < fl->nseq ? t : fl->nseq / 2 + (t - fl->nseq / 2) % (fl->nseq - fl->nseq / 2); int id = fl->seq[k]; if (id < fl->n) put(fb, &fl->im[id], fl->im[id].x, fl->im[id].y, SCREEN_H); }
     int off = in->rest > t ? (in->rest - t) / 2 : 0;
     put(fb, &in->text, in->text.x, in->text.y + off, in->clip);
+}
+
+void intro_audio_mix(Intro *in, int16_t *out, int n, int rate) {              /* the title tune, resampled with linear interpolation */
+    for (int i = 0; i < n; i++) {
+        int v = 0;
+        if (in && in->pcm) { unsigned p = (unsigned)in->apos; if (p + 1 < in->npcm) { double fr = in->apos - p; v = (int)(in->pcm[p] * (1 - fr) + in->pcm[p + 1] * fr); in->apos += (double)in->prate / rate; } }
+        out[i] = (int16_t)v;
+    }
 }
