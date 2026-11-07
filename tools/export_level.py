@@ -166,6 +166,7 @@ for i in range(L.g6.n):
         if p>=len(e) or not e[p]:break
         ln=e[p]
         if e[p+1]&0x7f==5:vm.append((i,bytes(e[p+2:p+ln])))
+        elif e[p+1]&0x7f==9 and e[p+2:p+4]==b'\0\0':vm.append((i|0x8000,bytes(e[p+4:p+ln])))   # event 9 with the hero (placement 0) as the other party: contact scripts
         p+=ln
 P('H',len(vm))
 for pid,b in vm:P('HB',pid,len(b));o+=b
