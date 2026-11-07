@@ -220,7 +220,7 @@ for n,per,bl in rs:
     for b in bl:P('B',len(b));o+=b
 # multi-frame creature images (water lurker etc.): slot, nframes, per frame w,h,dx,dy (relative to frame 0), RGBA
 cf=[]
-for s_ in range(112,122):
+for s_ in range(111,122):
     e=L.g2.rec(s_)
     if not e or len(e)<0x30:continue
     tab=0x28+u16(e,0x22);fr=[]
