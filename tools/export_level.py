@@ -20,6 +20,7 @@ for i in range(64):
 P('I',255)
 for s in range(255):
     e=L.g2.rec(s);im=L.sprite(s,0) if e else None
+    if e and im is None and len(e)<=0x20 and s16(e,0x18)>=0 and e[0x0c]&0x40 and 0<s16(e,0x18)//512<(len(L.s217)-L.wall_base)//512:im=L.wall_tile(s16(e,0x18)//512)   # a placeable wall cube (level 5 pillars, slots 95/98): the record's word +0x18 is the cube's byte offset in the cube bank (512 per cube)
     if e is None or len(e)<0x20:P('B',0);continue
     P('B',1 if im is not None else 2)
     F=[s16(e,x) for x in (2,4,0x10,0x12,0x14)];P('5h',*F);P('B',e[0x0c]&3);P('3h',F[2],F[3],F[4]);P('h',s16(e,0xa));P('4B',e[0x0c],e[0x16],e[0x17],e[0x1d])
