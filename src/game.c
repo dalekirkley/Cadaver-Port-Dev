@@ -38,7 +38,7 @@ struct Game {
     Obj hero;                         /* hero.slot = 8 */
     int facing, anim_t, moving;
     uint8_t font[46 * 24], fontmap[32]; char **text; int ntext; int day; int energy; int jump_t, jump_z0;
-    int has_scroll; uint8_t scroll_tiles[18 * 32], scroll_map[0x30], font5[46 * 20]; int nexam, nuse, ntake; uint16_t take_pid[512]; int16_t take_gold[512], take_xp[512]; uint8_t counter[256]; int nhid; struct { int room; Obj o; } hid[128]; int hurt_cd; int want_level; int pull_pid, pull_room; int spawn_pid; int rs_period[100], rs_nb[100]; uint8_t *rs_blk[100][8]; int tm_room, tm_left; int dbg, dbg_verb, dbg_pid, dbg_ran, dbg_execs; unsigned dbg_log[4][3]; unsigned char dbg_tr[48]; int dbg_ntr; int nvm; uint16_t vm_pid[256]; uint8_t vm_len[256], vm_code[256][255]; uint16_t exam_pid[512], exam_text[512], use_pid[512], use_text[512];   /* examine scroll */
+    int has_scroll; uint8_t scroll_tiles[18 * 32], scroll_map[0x30], font5[46 * 20]; int nexam, nuse, ntake; uint16_t take_pid[512]; int16_t take_gold[512], take_xp[512]; uint8_t counter[256]; int nhid; struct { int room; Obj o; } hid[128]; int hurt_cd; int want_level; int pull_pid, pull_room; int spawn_pid; int rs_period[100], rs_nb[100]; uint8_t *rs_blk[100][8]; int tm_room, tm_left; int nch; uint16_t ch_pid[64], ch_cont[64], ch_key[64]; uint8_t ch_flags[64], ch_trap[64]; int dbg, dbg_verb, dbg_pid, dbg_ran, dbg_execs; unsigned dbg_log[4][3]; unsigned char dbg_tr[48]; int dbg_ntr; int nvm; uint16_t vm_pid[256]; uint8_t vm_len[256], vm_code[256][255]; uint16_t exam_pid[512], exam_text[512], use_pid[512], use_text[512];   /* examine scroll */
     int scroll_t; char scroll_str[256]; long score; int map_open, map_px, map_py, status_open; long gold, xp, level; uint8_t visited[100];
     int has_icons; uint8_t icons[20 * 112]; uint16_t slotpos[8][4]; uint8_t verbtab[16];
     int target, nverbs, verbs[8], menu, sel, prev_joy, msg, msg_t, ninv, inv[64], inv_slot[64], inv_mode, inv_sel, inv_hold;     /* verb menu state */
@@ -133,6 +133,8 @@ Game *game_load(const char *path) {
           for (int i = 0; i < ns; i++) { int sl = rd8(f), nf = rd8(f); Sprite *sp = &g->spr[sl]; sp->nfr = 0;
               for (int k = 0; k < nf; k++) { int w = rd16(f), h = rd16(f), dx = rds16(f), dy = rds16(f); uint8_t *px = malloc((size_t)w * h * 4); rd(f, px, (size_t)w * h * 4);
                   if (k < 10) { sp->fr[k].w = w; sp->fr[k].h = h; sp->fr[k].dx = dx; sp->fr[k].dy = dy; sp->fr[k].px = px; sp->nfr = k + 1; } else free(px); } } }
+        { int nc = rd16(f); if (nc < 0 || nc > 64) nc = 0; g->nch = nc;         /* chest data: contents, key, flags, trap */
+          for (int i = 0; i < nc; i++) { g->ch_pid[i] = (uint16_t)rd16(f); g->ch_cont[i] = (uint16_t)rd16(f); g->ch_key[i] = (uint16_t)rd16(f); g->ch_flags[i] = (uint8_t)rd8(f); g->ch_trap[i] = (uint8_t)rd8(f); } }
         g->has_scroll = 1;
     }
     fclose(f);
@@ -457,6 +459,23 @@ static void exec_verb(Game *g, int verb) {
     }
     if (verb == 3) {                                                                  /* open a chest: lid up (state bit), its contents are spawned by its script */
         Obj *ch = &r->objs[g->target];
+        int ci = -1; for (int i = 0; i < g->nch; i++) if (g->ch_pid[i] == ch->pid) ci = i;
+        if (ci >= 0 && (ch->flags & 1)) { if (g->ch_flags[ci] & 0x20) { ch->flags &= ~1; play_sound(g, 0x38); } return; }          /* open: only some chests close again */
+        if (ci >= 0 && g->ch_trap[ci]) { change_energy(g, -g->ch_trap[ci]); g->ch_trap[ci] = 0; say(g, 50); play_sound(g, 0x24); return; }   /* a trap goes off first (once) */
+        if (ci >= 0 && g->ch_key[ci]) {                                                /* locked: the key must be in the rucksack */
+            int ki = -1; for (int i = 0; i < g->ninv; i++) if (g->inv[i] == g->ch_key[ci]) ki = i;
+            if (ki < 0) { play_sound(g, 0x3b); say(g, 48); return; }
+            if (g->ch_flags[ci] & 2) inv_remove(g, ki);                                /* the key is used up */
+            g->ch_key[ci] = 0; play_sound(g, 0x12);
+        }
+        if (ci >= 0 && g->ch_cont[ci]) {                                               /* contents appear where the chest stands */
+            int id = g->ch_cont[ci], got = 0; Obj o2;
+            for (int i = 0; i < g->nhid && !got; i++) if (g->hid[i].o.pid == id) { o2 = g->hid[i].o; g->hid[i] = g->hid[--g->nhid]; got = 1; }
+            for (int rm = 0; rm < 100 && !got; rm++) { Room *r2 = &g->rooms[rm]; if (!r2->valid || rm == g->cur) continue;
+                for (int i = 0; i < r2->nobj; i++) if (r2->objs[i].pid == id) { o2 = r2->objs[i]; r2->objs[i] = r2->objs[--r2->nobj]; got = 1; break; } }
+            if (got) { o2.flags &= ~0x80; o2.x = ch->x; o2.y = ch->y; o2.z = ch->z; r->objs[r->nobj++] = o2; ch = &r->objs[g->target]; }
+            g->ch_cont[ci] = 0;
+        }
         if (!(ch->flags & 1)) {
             ch->flags |= 1; play_sound(g, 0x0a);
             for (int i = 0; i < g->nvm; i++) if (g->vm_pid[i] == ch->pid) run_script(g, ch, g->vm_code[i], g->vm_len[i]);

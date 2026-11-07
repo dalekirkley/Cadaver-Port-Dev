@@ -234,4 +234,14 @@ for s_,e,tab,fr in cf:
     P('BB',s_,len(fr))
     for k,im in fr:
         P('HHhh',im.width,im.height,s16(e,tab+8*k+2)-s16(e,tab+2),s16(e,tab+8*k+4)-s16(e,tab+4));o+=im.tobytes()
+# chest data (types with byte +0x16 == 8): placement id, contents pid, key pid, flags, trap damage (block at placement +[+0xc])
+ch=[]
+for n in range(100):
+    lst=L.g5.rec(n)
+    for k in range(0,len(lst),2):
+        pid=u16(lst,k);p=L.g6.rec(pid);e=L.g2.rec(u16(p,6))
+        if len(e)>0x17 and e[0x16]==8 and p[0xc]+6<=len(p):
+            d=p[0xc];ch.append((pid,u16(p,d),u16(p,d+2),p[d+4],p[d+5]))
+P('H',len(ch))
+for c in ch:P('HHHBB',*c)
 open(out,'wb').write(o);print(len(o),'bytes,',len(exam),'examine texts')
