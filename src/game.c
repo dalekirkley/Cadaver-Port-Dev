@@ -42,7 +42,7 @@ struct Game {
     Obj hero;                         /* hero.slot = 8 */
     int facing, anim_t, moving;
     uint8_t font[46 * 24], fontmap[32]; char **text; int ntext; int day; int energy; int jump_t, jump_z0;
-    int has_scroll; uint8_t scroll_tiles[18 * 32], scroll_map[0x30], font5[46 * 20]; int nexam, nuse, ntake; uint16_t take_pid[512]; int16_t take_gold[512], take_xp[512]; uint8_t counter[256]; int nhid; struct { int room; Obj o; } hid[128]; int hurt_cd; int want_level; int pull_pid, pull_room; int spawn_pid; int rs_period[100], rs_nb[100]; uint8_t *rs_blk[100][8]; int tm_room, tm_left; int nch; uint16_t ch_pid[64], ch_cont[64], ch_key[64]; uint8_t ch_flags[64], ch_trap[64]; int dbg, dbg_verb, dbg_pid, dbg_ran, dbg_execs; unsigned dbg_log[4][3]; unsigned char dbg_tr[48]; int dbg_ntr; int nvm; uint16_t vm_pid[256]; uint8_t vm_len[256], vm_code[256][255]; uint16_t exam_pid[512], exam_text[512], use_pid[512], use_text[512];   /* examine scroll */
+    int has_scroll; uint8_t scroll_tiles[18 * 32], scroll_map[0x30], font5[46 * 20]; int nexam, nuse, ntake; uint16_t take_pid[512]; int16_t take_gold[512], take_xp[512]; uint8_t counter[256]; int nhid; struct { int room; Obj o; } hid[128]; int hurt_cd; int want_level; int pull_pid, pull_room; int spawn_pid; int rs_period[100], rs_nb[100]; uint8_t *rs_blk[100][16]; int tm_room, tm_left; int nch; uint16_t ch_pid[64], ch_cont[64], ch_key[64]; uint8_t ch_flags[64], ch_trap[64]; int dbg, dbg_verb, dbg_pid, dbg_ran, dbg_execs; unsigned dbg_log[4][3]; unsigned char dbg_tr[48]; int dbg_ntr; int nvm; uint16_t vm_pid[256]; uint8_t vm_len[256], vm_code[256][255]; uint16_t exam_pid[512], exam_text[512], use_pid[512], use_text[512];   /* examine scroll */
     int scroll_t; char scroll_str[256]; long score; int map_open, map_px, map_py, status_open; long gold, xp, level; uint8_t visited[100];
     int has_icons; uint8_t icons[20 * 112]; uint16_t slotpos[8][4]; uint8_t verbtab[16];
     int target, nverbs, verbs[8], menu, sel, prev_joy, msg, msg_t, ninv, inv[64], inv_slot[64], inv_mode, inv_sel, inv_hold;     /* verb menu state */
@@ -132,7 +132,7 @@ Game *game_load(const char *path) {
         { int nr = rd16(f); if (nr < 0 || nr > 100) nr = 0;            /* room scripts (timed events) */
           for (int i = 0; i < nr; i++) { int rn = rd8(f), per = rd8(f), nb = rd8(f); if (rn >= 100) rn = 0; g->rs_period[rn] = per; g->rs_nb[rn] = 0;
               for (int b = 0; b < nb; b++) { int ln = rd8(f); uint8_t *p = malloc(ln ? ln : 1); if (ln > 0) rd(f, p, (size_t)ln);
-                  if (g->rs_nb[rn] < 8) g->rs_blk[rn][g->rs_nb[rn]++] = p; else free(p); } } }
+                  if (g->rs_nb[rn] < 16) g->rs_blk[rn][g->rs_nb[rn]++] = p; else free(p); } } }
         { int ns = rd16(f); if (ns < 0 || ns > 30) ns = 0;              /* multi-frame creature images */
           for (int i = 0; i < ns; i++) { int sl = rd8(f), nf = rd8(f); Sprite *sp = &g->spr[sl]; sp->nfr = 0;
               for (int k = 0; k < nf; k++) { int w = rd16(f), h = rd16(f), dx = rds16(f), dy = rds16(f); uint8_t *px = malloc((size_t)w * h * 4); rd(f, px, (size_t)w * h * 4);
@@ -323,7 +323,7 @@ static void vm_op(Vm *m, int op) {
             Room *r = &g->rooms[g->hid[i].room]; Obj o = g->hid[i].o; o.flags &= ~0x80;
             r->objs[r->nobj++] = o; g->hid[i] = g->hid[--g->nhid]; break; }
         break; }
-    case 0x05: { int d = (int8_t)m->c[m->p]; m->p++; g->gold += d; if (g->gold < 0) g->gold = 0; play_sound(g, d < 0 ? 0x24 : 0x1a); break; }   /* add gold ($ffa0) */
+    case 0x05: { int d = m->c[m->p]; m->p++; g->gold += d; if (g->gold < 0) g->gold = 0; play_sound(g, d < 0 ? 0x24 : 0x1a); break; }   /* add gold ($ffa0) */
     case 0x33: { int n = m->c[m->p]; m->p++; if (n <= 9) g->want_level = n + 2; m->stop = 1; break; }              /* go to level n+2 ($10098) */
     case 0x24: { int id = vm_word(m); int x = m->c[m->p], y = m->c[m->p + 1], z = m->c[m->p + 2]; m->p += 4;   /* move/spawn a placement into the current room ($104b4) */
         Room *cr = &g->rooms[g->cur]; Obj o2; int got = 0;
@@ -332,7 +332,7 @@ static void vm_op(Vm *m, int op) {
         for (int rm = 0; rm < 100 && !got; rm++) { Room *r2 = &g->rooms[rm]; if (!r2->valid || rm == g->cur) continue;
             for (int i = 0; i < r2->nobj; i++) if (r2->objs[i].pid == id) { o2 = r2->objs[i]; r2->objs[i] = r2->objs[--r2->nobj]; got = 1; break; } }
         if (!got) return;
-        o2.flags &= ~0x80; o2.x = x; o2.y = y; o2.z = z; o2.anim = 8; o2.atick = 8; o2.stage = 0; cr->objs[cr->nobj++] = o2; break; }
+        o2.flags &= ~0x80; o2.x = x; o2.y = y; o2.z = z >= 0x40 ? 0 : z; o2.anim = 8; o2.atick = 8; o2.stage = 0; cr->objs[cr->nobj++] = o2; break; }
     case 0x25: { int n = m->c[m->p], dx = m->c[m->p + 1], dy = m->c[m->p + 2], dz = m->c[m->p + 3]; m->p += 4;   /* teleport the hero into room n at an offset from its origin ($10546) */
         if (n < 100 && g->rooms[n].valid) { g->cur = n; g->hero.x = MARGIN + HERO_FX + dx; g->hero.y = MARGIN + HERO_FY + dy; g->hero.z = dz; }
         break; }
@@ -596,8 +596,14 @@ void game_tick(Game *g, int joy) {
     int fire_edge = (joy & JOY_FIRE) && !(g->prev_joy & JOY_FIRE), new_dirs = (joy & 15) & ~(g->prev_joy & 15);
     if (fire_edge && !g->menu) g->pull_pid = 0;                 /* fire ends pull mode (choosing MOVE itself happens inside the menu below) */
     int prev = g->prev_joy; g->prev_joy = joy;
-    g->visited[g->cur] = 1;
-    if (g->tm_room != g->cur + 1) { g->tm_room = g->cur + 1; g->tm_left = g->rs_period[g->cur] * 17; }          /* room timer restarts on entry */
+    int first_visit = !g->visited[g->cur]; g->visited[g->cur] = 1;
+    if (g->tm_room != g->cur + 1) { g->tm_room = g->cur + 1; g->tm_left = g->rs_period[g->cur] * 17;          /* room timer restarts on entry */
+        for (int ev = first_visit ? 0x1c : 0x06; ev >= 0x06; ev -= 0x16) {                              /* entry events: 0x1c on the first visit ($e51c), then 0x06 on every entry ($e74e); they spawn most monsters */
+            int room = g->cur;
+            for (int b = 0; b < g->rs_nb[room]; b++) { const uint8_t *c = g->rs_blk[room][b]; if ((c[1] & 0x7f) != ev) continue;
+                Vm m = { g, &g->hero, c, c[0], 2, 0, 0 }; vm_block(&m); }
+        }
+        r = &g->rooms[g->cur]; }
     else if (g->tm_left > 0 && --g->tm_left == 0) {
         g->tm_left = g->rs_period[g->cur] * 17;
         for (int b = 0; b < g->rs_nb[g->cur]; b++) { const uint8_t *c = g->rs_blk[g->cur][b]; if ((c[1] & 0x7f) != 0x0e) continue;
