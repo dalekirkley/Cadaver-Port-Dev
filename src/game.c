@@ -821,8 +821,13 @@ void game_render(const Game *g, uint32_t *fb) {
                 for (int j = 0; j < n && !blocked; j++) {
                     if (done[j] || j == i || !items[i].solid || !items[j].solid) continue;
                     const Box *A = &items[j].b, *B = &items[i].b;               /* does j have to come before i? */
+                    if (items[i].hero && !items[j].hero && A->z1 - A->z0 <= 8 && A->x0 <= B->x1 + 2 && B->x0 <= A->x1 + 2 && A->y0 <= B->y1 + 2 && B->y0 <= A->y1 + 2) { blocked = 1; continue; }   /* coins, keys and other low floor items lie under the hero's feet, never over them */
                     int xy = !(A->x1 < B->x0 || B->x1 < A->x0 || A->y1 < B->y0 || B->y1 < A->y0);
-                    if (xy) blocked = A->z1 < B->z0;
+                    if (xy) {
+                        if (A->z1 < B->z0) blocked = 1;                         /* j is entirely underneath i */
+                        else if (B->z1 < A->z0) blocked = 0;                    /* i is entirely underneath j */
+                        else blocked = (A->x0 + A->x1 + A->y0 + A->y1) < (B->x0 + B->x1 + B->y0 + B->y1);   /* interpenetrating (e.g. the hero standing on a coin): the one whose centre is further back goes first */
+                    }
                     else { int bh = A->x1 < B->x0 || A->y1 < B->y0, rv = B->x1 < A->x0 || B->y1 < A->y0; blocked = bh && !rv; }
                 }
                 if (!blocked) pick = i;
