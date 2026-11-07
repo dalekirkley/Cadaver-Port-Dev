@@ -575,6 +575,20 @@ void game_tick(Game *g, int joy) {
             if (out) try_exit(g, dx, dy); else try_step_up(g, r, dx, dy);
         }
     }
+    if (g->moving && (dx || dy)) {   /* small objects being pushed slide in line with the hero's feet instead of riding on the edge of his box */
+        Box hb = box_of(g, h);
+        for (int i = 0; i < r->nobj; i++) {
+            Obj *q = &r->objs[i]; if (flat(g, q) || !pushable(g, q)) continue;
+            Box qb = box_of(g, q); int qw = dx ? qb.y1 - qb.y0 + 1 : qb.x1 - qb.x0 + 1, hw = dx ? hb.y1 - hb.y0 + 1 : hb.x1 - hb.x0 + 1;
+            if (qw >= hw || qb.z0 > hb.z1 || qb.z1 < hb.z0) continue;
+            int front = dx ? (dx > 0 ? qb.x0 == hb.x1 + 1 : qb.x1 == hb.x0 - 1) && !(qb.y1 < hb.y0 || hb.y1 < qb.y0)
+                           : (dy > 0 ? qb.y0 == hb.y1 + 1 : qb.y1 == hb.y0 - 1) && !(qb.x1 < hb.x0 || hb.x1 < qb.x0);
+            if (!front) continue;
+            int hc = dx ? hb.y0 + hb.y1 : hb.x0 + hb.x1, qc = dx ? qb.y0 + qb.y1 : qb.x0 + qb.x1;
+            if (abs(hc - qc) < 2) continue;
+            int s = hc > qc ? 1 : -1; try_move(g, r, q, dx ? 0 : s, dx ? s : 0, 0);
+        }
+    }
     {   /* objects interpenetrating the hero (arrival in a room, spawns): push pushable ones out along the dominant axis, as walking into them would */
         Box hb = box_of(g, h); int hcx = hb.x0 + hb.x1, hcy = hb.y0 + hb.y1;
         for (int i = 0; i < r->nobj; i++) {
