@@ -256,4 +256,17 @@ for pid in range(L.g6.n):
 P('H',len(mv))
 for pid,s0,s1,s2,pat,pr in mv:
     P('HBBBBB',pid,s0,s1,s2,pat,len(pr));o+=pr
+# held-item panel (optional, after the movement programs): while an item is held and nothing is touched, the original replaces the left HUD
+# (six verb slots) with another panel: a picture box and a name bar. Captured once from the emulator (tools/held_panel.png, level 1 palette,
+# 128x62 at (0,138)); stored as palette indices, mapped through level 1's palette and re-coloured with THIS level's palette, opaque only where
+# the normal HUD frame is opaque, so the room still shows elsewhere. Layout: B 1, then H x0, H y0, H w, H h, then w*h RGBA bytes.
+from PIL import Image
+hp=Image.open(os.path.join(os.path.dirname(os.path.abspath(__file__)),'held_panel.png')).convert('RGB')
+l1rgb=Level(adf,gb,1).rgb;hw,hh=hp.size;hov=bytearray()
+for yy in range(hh):
+    for xx in range(hw):
+        c=hp.getpixel((xx,yy));k=min(range(16),key=lambda i:sum(abs(a-b) for a,b in zip(l1rgb[i],c)))
+        solid=hud[138+yy,xx,3]==255
+        hov+=bytes(L.rgb[k])+bytes([255 if solid else 0])
+P('B',1);P('HHHH',0,138,hw,hh);o+=bytes(hov)
 open(out,'wb').write(o);print(len(o),'bytes,',len(exam),'examine texts')

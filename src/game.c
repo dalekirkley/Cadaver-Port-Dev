@@ -55,6 +55,7 @@ struct Game {
     unsigned tickno; int walk_ticks, walk_step, start_room; Obj start_hero;
     Sfx sfx[65]; Voice voice[4]; SeqVoice sq[8];
     uint8_t *hud;                      /* 320*200*4 bottom panel frame, or NULL */
+    uint8_t *held_ov; int held_x, held_y, held_w, held_h;   /* optional left-panel variant shown while an item is held (RGBA) */
 };
 
 /* ------------------------------------------------------------------ loading */
@@ -148,6 +149,8 @@ Game *game_load(const char *path) {
           for (int i = 0; i < nm; i++) { int pid = rd16(f), s0 = rd8(f), s1 = rd8(f), s2 = rd8(f), pat = rd8(f), ln = rd8(f); uint8_t tmp[256];
               if (ln < 0 || ln > 255) ln = 0; if (ln > 0) rd(f, tmp, (size_t)ln);
               if (pid >= 0 && pid < 512 && ln > 0) { memcpy(g->mv_prog[pid], tmp, (size_t)(ln > 96 ? 96 : ln)); g->mv_len[pid] = (uint8_t)(ln > 96 ? 96 : ln); g->mv_step[pid][0] = (uint8_t)s0; g->mv_step[pid][1] = (uint8_t)s1; g->mv_step[pid][2] = (uint8_t)s2; g->mv_pat[pid] = (uint8_t)pat; } } }
+        if (rd8(f) == 1) { int hx = rd16(f), hy = rd16(f), hw = rd16(f), hh = rd16(f);              /* held-item panel (optional, after the movement programs) */
+            if (hw > 0 && hh > 0 && hw <= SCREEN_W && hh <= SCREEN_H) { g->held_ov = malloc((size_t)hw * hh * 4); if (g->held_ov && rd(f, g->held_ov, (size_t)hw * hh * 4)) { g->held_x = hx; g->held_y = hy; g->held_w = hw; g->held_h = hh; } else { free(g->held_ov); g->held_ov = NULL; } } }
         g->has_scroll = 1;
     }
     fclose(f);
@@ -163,7 +166,7 @@ void game_free(Game *g) {
     for (int s = 0; s < 255; s++) { free(g->spr[s].px); free(g->spr[s].apx); for (int k = 0; k < g->spr[s].nfr; k++) free(g->spr[s].fr[k].px); }
     for (int n = 0; n < g->nframes; n++) free(g->frames[n].px);
     for (int n = 0; n < 100; n++) { free(g->rooms[n].bg); free(g->rooms[n].walls); free(g->rooms[n].objs); }
-    free(g->hud);
+    free(g->hud); free(g->held_ov);
     for (int i = 0; i < g->ntext; i++) free(g->text[i]);
     free(g->text);
     for (int i = 0; i < 65; i++) free(g->sfx[i].data);
@@ -1180,6 +1183,19 @@ void game_render(const Game *g, uint32_t *fb) {
                 }
             }
         }   /* measured against the original: 3 px right of the nominal box */
+        if (!g->inv_mode && g->inv_hold >= 0 && g->target < 0) {                       /* held item (emulator, $4ee set): the verb slots give way to a 32x32 picture box at (20,143) in colour (170,102,34), with the item name centred at x 56 on the text line y 186 */
+            int hs = -1; for (int i = 0; i < g->ninv; i++) if (g->inv[i] == g->inv_hold) hs = g->inv_slot[i];
+            if (hs >= 0 && hs < 256) {
+                int ci = 9; for (int k = 0; k < 16; k++) if (abs(g->pal[k][0] - 170) < 12 && abs(g->pal[k][1] - 102) < 12 && abs(g->pal[k][2] - 34) < 12) { ci = k; break; }
+                uint32_t bg = g->pal[ci][0] | g->pal[ci][1] << 8 | g->pal[ci][2] << 16 | 0xFF000000u;
+                if (g->held_ov) { blit(fb, g->held_ov, g->held_w, g->held_h, g->held_x, g->held_y);          /* the captured panel replaces the six slot frames */
+                    for (int y = 185; y < 193; y++) for (int x = 20; x < 94; x++) fb[y * SCREEN_W + x] = 0xFF000000u; }   /* blank the captured name text */
+                for (int y = 144; y < 176; y++) for (int x = 20; x < 52; x++) fb[y * SCREEN_W + x] = bg;
+                const Sprite *hsp = &g->spr[hs];
+                if (hsp->px) blit(fb, hsp->px, hsp->w, hsp->h, 36 - hsp->w / 2, 160 - hsp->h / 2);
+                if (hsp->name >= 0 && hsp->name < g->ntext) draw_text(g, fb, g->text[hsp->name], 6, 186, 100);
+            }
+        }
     }
     if (g->inv_mode && g->ninv) draw_rucksack(g, fb);
     else if (g->hud) draw_energy(g, fb);
