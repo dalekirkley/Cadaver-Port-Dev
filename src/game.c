@@ -839,6 +839,17 @@ static void blit(uint32_t *fb, const uint8_t *px, int w, int h, int x0, int y0) 
     }
 }
 
+/* Door slabs sit inside the doorway cut out of the background (pure black there): draw them only into that hole so the frame and the wall stay in front. */
+static void blit_hole(uint32_t *fb, const uint8_t *px, int w, int h, int x0, int y0) {
+    for (int y = 0; y < h; y++) {
+        int Y = y0 + y; if (Y < 0 || Y >= SCREEN_H) continue;
+        for (int x = 0; x < w; x++) {
+            int X = x0 + x; if (X < 0 || X >= SCREEN_W) continue;
+            const uint8_t *p = px + ((size_t)y * w + x) * 4;
+            if (p[3] && (fb[Y * SCREEN_W + X] & 0xFFFFFFu) == 0) fb[Y * SCREEN_W + X] = p[0] | p[1] << 8 | p[2] << 16 | 0xFF000000u;
+        }
+    }
+}
 typedef struct { int key, x, y, z, slot; int hero; Box b; int solid; int alt; int fr; } DrawItem;
 static int cmp_item(const void *a, const void *b) {
     const DrawItem *p = a, *q = b;
@@ -1044,6 +1055,7 @@ void game_render(const Game *g, uint32_t *fb) {
             blit(fb, fr->px, fr->w, fr->h, px + 2 + fr->hx, py + fr->hy);
         } else if (d->fr >= 0 && d->fr < s->nfr) { blit(fb, s->fr[d->fr].px, s->fr[d->fr].w, s->fr[d->fr].h, px + s->fr[d->fr].dx, py + s->fr[d->fr].dy);
         } else if (d->alt) blit(fb, s->apx, s->aw, s->ah, px + s->ax, py + s->ay);
+        else if (s->state == 1 && d->key == -999 && d->slot < 2) blit_hole(fb, s->px, s->w, s->h, px, py);
         else if (s->state == 1) blit(fb, s->px, s->w, s->h, px, py);
     }
     if (g->hud) { blit(fb, g->hud, SCREEN_W, SCREEN_H, 0, 0); }     /* bottom panel frame over the room */
