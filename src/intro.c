@@ -21,12 +21,12 @@ struct Intro {
 #define STORY_T0 1416
 #define STORY_REST 1208
 #define STORY_END 1400
-static const int STORY_STOPS[5] = {125, 239, 371, 485, 599};
+static const int STORY_STOPS[6] = {125, 239, 371, 485, 599, 1271};   /* the credits scroll on without a pause up to the licence notice */
 #define PANE_TOP 40
 static int story_scroll(int t) {
     if (t < STORY_T0) return 0;
     int s = 0, tt = STORY_T0;
-    for (int i = 0; i < 5; i++) {
+    for (int i = 0; i < 6; i++) {
         int d = STORY_STOPS[i] - s;
         if (t < tt + d * 2) return s + (t - tt) / 2;
         tt += d * 2; s = STORY_STOPS[i];
@@ -78,7 +78,7 @@ int intro_tick(Intro *in, int joy) {
     if (!(joy & JOY_INV)) in->held = 0;
     in->frame += 2;
     if ((joy & JOY_INV) && !in->held && in->frame > 4) return 1;             /* the intro runs until space is pressed */
-    if (in->story.px && in->frame - LOGO_FRAMES - STORY_T0 > 0 && story_scroll(in->frame - LOGO_FRAMES) > STORY_END) { in->frame = LOGO_FRAMES; in->apos = 0; }   /* story finished: back to the title */
+    if (in->story.px && in->frame - LOGO_FRAMES - STORY_T0 > 0 && story_scroll(in->frame - LOGO_FRAMES) > STORY_END) in->frame = LOGO_FRAMES;   /* story finished: back to the title */
     return 0;
 }
 static void put(uint32_t *fb, const Img *im, int ox, int oy, int clip_y, int top) {
@@ -106,7 +106,7 @@ void intro_render(const Intro *in, uint32_t *fb) {
 void intro_audio_mix(Intro *in, int16_t *out, int n, int rate) {              /* the title tune, resampled with linear interpolation */
     for (int i = 0; i < n; i++) {
         int v = 0;
-        if (in && in->pcm) { unsigned p = (unsigned)in->apos; if (p + 1 < in->npcm) { double fr = in->apos - p; v = (int)(in->pcm[p] * (1 - fr) + in->pcm[p + 1] * fr); in->apos += (double)in->prate / rate; } }
+        if (in && in->pcm) { unsigned p = (unsigned)in->apos; if (p + 1 < in->npcm) { double fr = in->apos - p; v = (int)(in->pcm[p] * (1 - fr) + in->pcm[p + 1] * fr); in->apos += (double)in->prate / rate; } else in->apos = 0; }   /* the tune loops */
         out[i] = (int16_t)v;
     }
 }

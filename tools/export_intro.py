@@ -36,8 +36,10 @@ ys,xs=np.where(m);x0,y0,x1,y1=xs.min(),ys.min(),xs.max(),ys.max()
 img(rgba(fin[y0:y1+1,x0:x1+1],m[y0:y1+1,x0:x1+1]),int(x0),int(y0))
 o+=struct.pack('<HHHH',160,195,44-15,210-15)      # clip y, rest frame (title frames), first visible, rest absolute
 if len(sys.argv)>3:
-    # title music: the emulator's WAV capture (44.1 kHz stereo, the title tune is on the left channel only, 0.1 s .. 8.1 s) -> mono 22.05 kHz int16
-    w=np.fromfile(sys.argv[3],dtype=np.int16,offset=44).reshape(-1,2)[:int(8.3*44100),0].astype(np.int32)
-    w=((w[0::2]+w[1::2])//2)[:len(w)//2].astype(np.int16)
+    # music: the emulator's WAV capture of the [cr CLS] disk (44.1 kHz stereo). The tune loops after 181.44 s (it restarts at
+    # 181.541 s, the same onset as the first pass at 0.101 s); both channels are mixed to mono 22.05 kHz int16.
+    w=np.fromfile(sys.argv[3],dtype=np.int16,offset=44).reshape(-1,2).astype(np.int32)[int(0.1015*44100):int(181.541*44100)]
+    w=(w-w[:50].mean(axis=0).astype(np.int32)).sum(axis=1)//2          # remove the idle-channel DC offsets
+    w=((w[0::2]+w[1::2])//2).clip(-32768,32767).astype(np.int16)
     o+=struct.pack('<II',22050,len(w))+w.tobytes()
 open(out,'wb').write(o);print(len(o),'bytes; text',x0,y0,x1,y1,'flame images',[len(s[0]) for s in seqs])
