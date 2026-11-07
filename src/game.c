@@ -759,7 +759,14 @@ void game_tick(Game *g, int joy) {
     for (int i = 0; i < r->nobj; i++) {                      /* water lurker (slot 116): ripples, surfaces, opens its mouth, sinks, then returns to the pool until the next timer. Frame order and timing are read off the emulator, not decoded */
         Obj *c = &r->objs[i];
         if (g->lvl1 && c->slot == 111 && g->spr[111].nfr >= 2) { c->anim = g->tickno % 36 < 5 ? 1 : 0; continue; }   /* dragon head: mouth open for 5 of every 36 ticks (emulator, room 36; phase unknown) */
-        if (g->lvl1 && c->slot == 121 && g->spr[121].nfr >= 4) { static const int fl[4] = { 0, 3, 2, 1 }; c->anim = fl[(c->stage++ / 3 + c->x) % 4]; continue; }   /* dragon flame: 4-frame loop, 3 ticks per frame (emulator, room 36) */
+        if (g->lvl1 && c->slot == 121 && g->spr[121].nfr >= 4) { static const int fl[4] = { 0, 3, 2, 1 };
+            if (!c->vx) c->vx = c->x;                       /* remember the resting x (the leftmost flame is the one the dragon shoots out) */
+            c->anim = fl[(c->stage++ / 3 + c->vx) % 4];
+            if (c->vx == 51) {   /* launched flame: screen offsets from its rest position, every 2 ticks from tick 2 of the 36-tick cycle (emulator, room 36) */
+                static const int8_t off[15][2] = { {-29,-22}, {-26,-12}, {-25,1}, {-22,10}, {-21,13}, {-18,9}, {-17,10}, {-14,7}, {-13,8}, {-10,6}, {-9,7}, {-6,4}, {-5,5}, {-2,1}, {-1,2} };
+                int k = (g->tickno % 36 + 34) % 36 / 2, dx = 0, dy = 0; if (k < 15) { dx = off[k][0]; dy = off[k][1]; }
+                c->x = c->vx + dx / 2; c->lift = dx / 2 - dy; }   /* screen: dx = 2*dx_world, dy = dx_world - dz */
+            continue; }   /* dragon flame: 4-frame loop, 3 ticks per frame (emulator, room 36) */
         if (g->spr[c->slot].nfr < 10) continue;
         if (g->lvl1 && c->slot == 112 && g->spr[112].nfr >= 16) {          /* worm: 78-tick cycle read off the emulator: hop (frame 15, arc), crawl (frames 12/13 alternating), rest (frame 14); gone after 3 cycles */
             static const int arc[10] = { 8, 18, 33, 46, 54, 52, 42, 28, 12, 0 };
