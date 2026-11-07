@@ -57,15 +57,33 @@ static int read_joy(void) {
     return j;
 }
 
+static WINDOWPLACEMENT fs_prev = { sizeof(WINDOWPLACEMENT) }; static int fullscreen;
+static void toggle_fullscreen(HWND h) {                                  /* borderless fullscreen on the monitor the window is on (F11 / Alt+Enter) */
+    DWORD st = (DWORD)GetWindowLongA(h, GWL_STYLE);
+    if (!fullscreen) {
+        MONITORINFO mi = { sizeof mi };
+        if (GetWindowPlacement(h, &fs_prev) && GetMonitorInfoA(MonitorFromWindow(h, MONITOR_DEFAULTTOPRIMARY), &mi)) {
+            SetWindowLongA(h, GWL_STYLE, (LONG)(st & ~WS_OVERLAPPEDWINDOW));
+            SetWindowPos(h, HWND_TOP, mi.rcMonitor.left, mi.rcMonitor.top, mi.rcMonitor.right - mi.rcMonitor.left, mi.rcMonitor.bottom - mi.rcMonitor.top, SWP_NOOWNERZORDER | SWP_FRAMECHANGED);
+            fullscreen = 1; ShowCursor(FALSE); }
+    } else {
+        SetWindowLongA(h, GWL_STYLE, (LONG)(st | WS_OVERLAPPEDWINDOW)); SetWindowPlacement(h, &fs_prev);
+        SetWindowPos(h, NULL, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOOWNERZORDER | SWP_FRAMECHANGED);
+        fullscreen = 0; ShowCursor(TRUE); }
+}
 static LRESULT CALLBACK wndproc(HWND h, UINT m, WPARAM w, LPARAM l) {
     switch (m) {
     case WM_DESTROY: running = 0; PostQuitMessage(0); return 0;
     case WM_KEYDOWN:
         if (w == VK_ESCAPE) { running = 0; PostQuitMessage(0); }
         if (w == VK_F2 && !(l & (1 << 30))) crt_on ^= 1;
+        if (w == VK_F11 && !(l & (1 << 30))) toggle_fullscreen(h);
         if ((w == VK_PRIOR || w == VK_NEXT) && g_game) game_cycle_room(g_game, w == VK_NEXT ? 1 : -1);   /* debug: walk through the rooms */                    /* F2: CRT filter on/off */
         if (w >= VK_F6 && w <= VK_F10) pending_level = (int)(w - VK_F6) + 1;   /* debug level switch; F1 stays free for the map */
         return 0;
+    case WM_SYSKEYDOWN:
+        if (w == VK_RETURN && !(l & (1 << 30))) { toggle_fullscreen(h); return 0; }
+        break;
     case WM_SIZING: {                                           /* snap the window to the 320x200 shape while it is dragged */
         RECT *rc = (RECT *)l, nc = {0, 0, 0, 0}; AdjustWindowRect(&nc, WS_OVERLAPPEDWINDOW, FALSE);
         int bw = (nc.right - nc.left), bh = (nc.bottom - nc.top);               /* frame size around the client area */
