@@ -896,7 +896,7 @@ static void project(const Game *g, int org, int x, int y, int z, const int16_t *
     int bl = base / 40, bb = base % 40; if (bb < 0) { bb += 40; bl--; }
     int off = g->sub[ys * 8 + xs][0], sh = g->sub[ys * 8 + xs][1];
     int ol = (int)lrint((double)off / 40.0), ob = off - 40 * ol;
-    *px = (bb + ob) * 8 + sh - 16 * (F[1] - 1) + 16 - 2 * (((F[2] - 1) & 7) + 1);   /* + footprint-width term: measured in room 62 (gaol) against the emulator: dx = 16 - 2 * width, width wrapping at the 8-unit cell (exact for 7 object types) */
+    *px = (bb + ob) * 8 + sh - 16 * (F[1] - 1);
     *py = bl + ol - (z - F[0] + F[2] + F[3] + F[4]);
 }
 
@@ -1145,13 +1145,14 @@ void game_render(const Game *g, uint32_t *fb) {
     for (int i = 0; i < n; i++) {
         const DrawItem *d = &items[i]; const Sprite *s = &g->spr[d->slot];
         int px, py; project(g, r->org, d->x, d->y, d->z, s->f, &px, &py);
+        int xo = 16 - 2 * (((s->f[2] - 1) & 7) + 1);   /* static object sprites sit 16 - 2*width px further right (width = footprint x size, wrapping at the 8-unit cell): measured in room 62 against the emulator, exact for 7 object types; the hero, creature frames and doors keep their own hotspots */
         if (d->hero) {
             const Frame *fr = &g->frames[hero_frame(g) % g->nframes];
             blit(fb, fr->px, fr->w, fr->h, px + 2 + fr->hx, py + fr->hy);
         } else if (d->fr >= 0 && d->fr < s->nfr) { blit(fb, s->fr[d->fr].px, s->fr[d->fr].w, s->fr[d->fr].h, px + s->fr[d->fr].dx, py + s->fr[d->fr].dy);
-        } else if (d->alt) blit(fb, s->apx, s->aw, s->ah, px + s->ax, py + s->ay);
+        } else if (d->alt) blit(fb, s->apx, s->aw, s->ah, px + xo + s->ax, py + s->ay);
         else if (s->state == 1 && d->key == -999 && d->slot < 2) blit_door(fb, s, d->slot, px, py);
-        else if (s->state == 1) blit(fb, s->px, s->w, s->h, px, py);
+        else if (s->state == 1) blit(fb, s->px, s->w, s->h, px + xo, py);
     }
     if (g->hud) { blit(fb, g->hud, SCREEN_W, SCREEN_H, 0, 0); }     /* bottom panel frame over the room */
     if (g->text) {
