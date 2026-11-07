@@ -409,9 +409,9 @@ static int try_exit(Game *g, int dx, int dy) {
                 g->wallflag[w->idx] = 0;                              /* the door stays unlocked after the key is used (a consumed key could never reopen it) */
                 play_sound(g, 18); say(g, 1); key = 0; break;
             }
-            if (key) { if (g->bump_timer <= 0) { play_sound(g, 60); g->bump_timer = 32; } return 0; }
+            if (key) { if (g->bump_timer <= 0) { play_sound(g, 0); g->bump_timer = 32; } return 0; }
         } else if (wall_closed(g, w)) {                           /* shut door: bump, with a sound at most every 32 ticks ($9be counter) */
-            if (g->bump_timer <= 0) { play_sound(g, 60); g->bump_timer = 32; }
+            if (g->bump_timer <= 0) { play_sound(g, 0); g->bump_timer = 32; }
             return 0;
         }
         Room *nr = &g->rooms[n]; int x, y;
@@ -423,7 +423,7 @@ static int try_exit(Game *g, int dx, int dy) {
             x = (((nx - MARGIN) & ~7) == 0) ? nr->sx * 8 - 1 : MARGIN + HERO_FX;
         }
         h->z = (((h->z >> 4) + r->basez - nr->basez) << 4) | (h->z & 15);
-        h->x = x; h->y = y; g->cur = n; return 1;
+        h->x = x; h->y = y; g->cur = n; play_sound(g, 0x38); return 1;                 /* door sound (not in the original's trace: the lever clunk stands in) */
     }
     return 0;
 }
@@ -707,7 +707,7 @@ void game_tick(Game *g, int joy) {
        script reaches its 2nd and 4th frame (the `$fc 00` entries of the walk scripts). */
     if (g->moving) {
         int step = g->walk_ticks / WALK_TICKS_PER_FRAME;
-        if (g->walk_ticks % WALK_TICKS_PER_FRAME == 0 && (step & 1)) play_sound(g, 0);
+        if (g->walk_ticks % WALK_TICKS_PER_FRAME == 0 && (step & 1) && !g->jump_t && hero_grounded(g, r)) play_voice(g, 28, 428, 10, 0.08);   /* no footsteps in the air; the thud (sample 28) the original sounds on channel 1 while walking */
         g->walk_step = step & 3; g->walk_ticks++;
     } else g->walk_ticks = 0;
     g->anim_t++;
