@@ -38,7 +38,7 @@ struct Game {
     Obj hero;                         /* hero.slot = 8 */
     int facing, anim_t, moving;
     uint8_t font[46 * 24], fontmap[32]; char **text; int ntext; int day; int energy; int jump_t, jump_z0;
-    int has_scroll; uint8_t scroll_tiles[18 * 32], scroll_map[0x30], font5[46 * 20]; int nexam, nuse, ntake; uint16_t take_pid[512]; int16_t take_gold[512], take_xp[512]; uint8_t counter[256]; int nhid; struct { int room; Obj o; } hid[128]; int hurt_cd; int want_level; int spawn_pid; int dbg, dbg_verb, dbg_pid, dbg_ran, dbg_execs; unsigned dbg_log[4][3]; unsigned char dbg_tr[48]; int dbg_ntr; int nvm; uint16_t vm_pid[256]; uint8_t vm_len[256], vm_code[256][255]; uint16_t exam_pid[512], exam_text[512], use_pid[512], use_text[512];   /* examine scroll */
+    int has_scroll; uint8_t scroll_tiles[18 * 32], scroll_map[0x30], font5[46 * 20]; int nexam, nuse, ntake; uint16_t take_pid[512]; int16_t take_gold[512], take_xp[512]; uint8_t counter[256]; int nhid; struct { int room; Obj o; } hid[128]; int hurt_cd; int want_level; int pull_pid, pull_room; int spawn_pid; int dbg, dbg_verb, dbg_pid, dbg_ran, dbg_execs; unsigned dbg_log[4][3]; unsigned char dbg_tr[48]; int dbg_ntr; int nvm; uint16_t vm_pid[256]; uint8_t vm_len[256], vm_code[256][255]; uint16_t exam_pid[512], exam_text[512], use_pid[512], use_text[512];   /* examine scroll */
     int scroll_t; char scroll_str[256]; long score; int map_open, map_px, map_py, status_open; long gold, xp, level; uint8_t visited[100];
     int has_icons; uint8_t icons[20 * 112]; uint16_t slotpos[8][4]; uint8_t verbtab[16];
     int target, nverbs, verbs[8], menu, sel, prev_joy, msg, msg_t, ninv, inv[64];     /* verb menu state */
@@ -206,7 +206,7 @@ static int overlap(Box a, Box b) {
 }
 static int flat(const Game *g, const Obj *o) { const Sprite *s = &g->spr[o->slot]; return o->slot != 8 && !s->push && s->fz <= 2; }   /* floor decals: walk-over, drawn under everything */
 /* Walking pushes only light objects (type byte +$c bit 1, the TAKE bit); bit 0 alone = heavy furniture (altars, pillars) that only the MOVE verb could shift. */
-static int pushable(const Game *g, const Obj *o) { return o->slot != 8 && ((g->spr[o->slot].push & 2) != 0 || (o->xflags & 0x100)); }   /* 0x100 = unlocked by the MOVE verb */
+static int pushable(const Game *g, const Obj *o) { return o->slot != 8 && ((g->spr[o->slot].push & 2) != 0 || g->spr[o->slot].b16 == 8); }   /* chests slide too */
 
 /* Try to move o by (dx,dy); every overlapping object must itself be pushable and movable. */
 static int try_move(Game *g, Room *r, Obj *o, int dx, int dy, int depth) {
@@ -387,7 +387,7 @@ static void build_verbs(Game *g) {
 static void say(Game *g, int text_id) { g->msg = text_id; g->msg_t = 50; }
 
 static void exec_verb(Game *g, int verb) {
-    if (verb == 0xa && g->target >= 0) { g->rooms[g->cur].objs[g->target].xflags |= 0x100; return; }   /* MOVE: this object can now be pushed */
+    if (verb == 0xa && g->target >= 0) { g->pull_pid = g->rooms[g->cur].objs[g->target].pid; g->pull_room = g->cur; return; }   /* MOVE: walking away drags this object behind the hero */
     Room *r = &g->rooms[g->cur];
     if (g->target < 0) return;
     g->dbg_verb = verb; g->dbg_pid = r->objs[g->target].pid; g->dbg_ran = 0; g->dbg_ntr = 0; g->dbg_log[g->dbg_execs & 3][0] = g->tickno; g->dbg_log[g->dbg_execs & 3][1] = (unsigned)verb; g->dbg_log[g->dbg_execs & 3][2] = (unsigned)g->prev_joy; g->dbg_execs++;
@@ -517,10 +517,17 @@ void game_tick(Game *g, int joy) {
             for (int k = 0; k < g->nvm; k++) if (g->vm_pid[k] == (q->pid | 0x8000)) { run_script(g, q, g->vm_code[k], g->vm_len[k]); g->hurt_cd = 25; }
         }
     }
+    if (g->pull_pid && (g->pull_room != g->cur || fire_edge)) g->pull_pid = 0;
     g->moving = 0;
     if (dx || dy) {
         g->facing = joy & 15; g->moving = 1;
-        if (!try_move(g, r, h, dx, dy, 0)) {
+        Obj *pulled = NULL;                                                      /* MOVE (pull mode): the chosen object follows when the hero walks away from it */
+        if (g->pull_pid && g->pull_room == g->cur) {
+            for (int i = 0; i < r->nobj; i++) if (r->objs[i].pid == g->pull_pid) { pulled = &r->objs[i]; break; }
+            if (pulled) { Obj gh = *h; gh.x -= dx; gh.y -= dy; if (!overlap(box_of(g, &gh), box_of(g, pulled))) pulled = NULL; }
+        }
+        if (try_move(g, r, h, dx, dy, 0)) { if (pulled) try_move(g, r, pulled, dx, dy, 0); }
+        else {
             int nx = h->x + dx, ny = h->y + dy;
             int out = nx >= r->sx * 8 || ny >= r->sy * 8 || nx - HERO_FX + 1 < MARGIN || ny - HERO_FY + 1 < MARGIN;
             if (out) try_exit(g, dx, dy); else try_step_up(g, r, dx, dy);
