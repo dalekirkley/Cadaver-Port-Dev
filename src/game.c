@@ -575,6 +575,18 @@ void game_tick(Game *g, int joy) {
             if (out) try_exit(g, dx, dy); else try_step_up(g, r, dx, dy);
         }
     }
+    {   /* objects interpenetrating the hero (arrival in a room, spawns): push pushable ones out along the dominant axis, as walking into them would */
+        Box hb = box_of(g, h); int hcx = hb.x0 + hb.x1, hcy = hb.y0 + hb.y1;
+        for (int i = 0; i < r->nobj; i++) {
+            Obj *q = &r->objs[i]; if (flat(g, q) || !pushable(g, q)) continue;
+            Box qb = box_of(g, q); if (!overlap(hb, qb)) continue;
+            int ex = (qb.x0 + qb.x1) - hcx, ey = (qb.y0 + qb.y1) - hcy, sx = 0, sy = 0;
+            if (abs(ex) >= abs(ey)) sx = ex >= 0 ? 1 : -1; else sy = ey >= 0 ? 1 : -1;
+            int hz = h->z; h->z = hz + 1000;                                     /* lets try_move ignore the hero while separating */
+            if (!try_move(g, r, q, sx, sy, 0)) { int ox = sx, oy = sy; sx = oy ? (ex >= 0 ? 1 : -1) : 0; sy = ox ? (ey >= 0 ? 1 : -1) : 0; if (sx || sy) try_move(g, r, q, sx, sy, 0); }
+            h->z = hz;
+        }
+    }
     if (g->jump_t) {
         int prevz = h->z, nz = g->jump_z0 + JUMP_Z[g->jump_t - 1], land = -1;
         if (g->jump_t > 10 || nz < prevz) {                                   /* descending: land on the highest object top passed through */
@@ -821,7 +833,6 @@ void game_render(const Game *g, uint32_t *fb) {
                 for (int j = 0; j < n && !blocked; j++) {
                     if (done[j] || j == i || !items[i].solid || !items[j].solid) continue;
                     const Box *A = &items[j].b, *B = &items[i].b;               /* does j have to come before i? */
-                    if (items[i].hero && !items[j].hero && A->z1 - A->z0 <= 8 && A->x0 <= B->x1 + 2 && B->x0 <= A->x1 + 2 && A->y0 <= B->y1 + 2 && B->y0 <= A->y1 + 2) { blocked = 1; continue; }   /* coins, keys and other low floor items lie under the hero's feet, never over them */
                     int xy = !(A->x1 < B->x0 || B->x1 < A->x0 || A->y1 < B->y0 || B->y1 < A->y0);
                     if (xy) {
                         if (A->z1 < B->z0) blocked = 1;                         /* j is entirely underneath i */
