@@ -22,7 +22,12 @@ typedef struct { int sfx; double pos, step; int vol; double left, total; } Voice
 typedef struct { const SndEv *ev; int n, i, mv, snd; double t, el; } SeqVoice;   /* left = seconds before the voice is cut (0 = play to the end) */
 typedef struct { int state, w, h; int16_t f[5]; int push; int16_t fx, fy, fz, name; uint8_t c, b16, b17, b1d; uint8_t *px; int aw, ah, ax, ay; uint8_t *apx; int nfr; struct { int w, h, dx, dy; uint8_t *px; } fr[10]; } Sprite;
 typedef struct { int16_t hx, hy; int w, h; uint8_t *px; } Frame;
-typedef struct { int x, y, z, slot, flags, pid, xflags, anim, atick, home, stage; } Obj;       /* x,y = max corner, inclusive box */
+typedef struct { int x, y, z, slot, flags, pid, xflags, anim, atick, home, stage, vx, vy, life, hp; } Obj;   /* life > 0: a missile in flight; hp: remaining health of a creature (0 = not set yet) */
+#define MISSILE_SLOT 31          /* the thrown-rock image (16x7) */
+#define MISSILE_PID 9000
+#define MISSILE_SPEED 3
+#define CREATURE_HP 15           /* guess: three hits of the stone bag's power 5 */
+#define ROCK_POWER 5       /* x,y = max corner, inclusive box */
 typedef struct { int x, y, orient; int box[4]; int slot, z, wx, wy; int idx, flags, b7; } Wall;
 typedef struct {
     int valid, x0, y0, sx, sy, basez, org, name, prefix;
@@ -93,7 +98,7 @@ Game *game_load(const char *path) {
         }
         int no = rd16(f); r->objs = calloc((size_t)no + 32, sizeof(Obj)); r->nobj = 0;
         for (int k = 0; k < no; k++) {
-            Obj o; o.pid = rd16(f); o.x = rd8(f); o.y = rd8(f); o.z = rd8(f); o.flags = rd8(f); o.slot = rd16(f); o.xflags = rd8(f); o.anim = 0; o.atick = 0; o.home = (int)n; o.stage = 0;
+            Obj o; memset(&o, 0, sizeof o); o.pid = rd16(f); o.x = rd8(f); o.y = rd8(f); o.z = rd8(f); o.flags = rd8(f); o.slot = rd16(f); o.xflags = rd8(f); o.anim = 0; o.atick = 0; o.home = (int)n; o.stage = 0;
             if (o.flags & 0x80) { if (g->nhid < 128) { g->hid[g->nhid].room = (int)n; g->hid[g->nhid++].o = o; } continue; }   /* not spawned yet: a script can bring it in */
             if (o.slot == 8) { g->hero = o; g->start_hero = o; g->start_room = (int)n; continue; }       /* the player placement */
             r->objs[r->nobj++] = o;
@@ -591,6 +596,48 @@ static void hero_gravity(Game *g, Room *r) {
     if (h->z > rest) { h->z -= 4; if (h->z < rest) h->z = rest; }
 }
 
+
+/* Ranged weapons: fire with a class-4 item held (the stone bag) throws a rock in the facing direction (original $ee28: sound $14, missile = placement 121 = image slot 31, power 5, no ammo needed). */
+static int held_ranged(const Game *g) {
+    if (g->inv_hold < 0) return 0;
+    for (int i = 0; i < g->ninv; i++) if (g->inv[i] == g->inv_hold) return g->spr[g->inv_slot[i]].b16 == 4;
+    return 0;
+}
+static int fire_weapon(Game *g) {
+    Room *r = &g->rooms[g->cur]; Obj *h = &g->hero;
+    int dx = ((g->facing & JOY_RIGHT) ? 1 : 0) - ((g->facing & JOY_LEFT) ? 1 : 0), dy = ((g->facing & JOY_DOWN) ? 1 : 0) - ((g->facing & JOY_UP) ? 1 : 0);
+    if ((!dx && !dy) || r->nobj >= 4000) return 0;
+    Obj m; memset(&m, 0, sizeof m); m.slot = MISSILE_SLOT; m.pid = MISSILE_PID + (g->spawn_pid++ & 255);
+    m.x = h->x + dx * 4; m.y = h->y + dy * 4; m.z = h->z + 10; m.vx = dx; m.vy = dy; m.life = 40;
+    r->objs[r->nobj++] = m; play_sound(g, 0x14); return 1;
+}
+/* Missiles fly MISSILE_SPEED units a tick in single steps; they stop at the room edge or on the first solid thing, which a creature loses health to. */
+static void update_missiles(Game *g) {
+    Room *r = &g->rooms[g->cur];
+    for (int i = 0; i < r->nobj; i++) {
+        Obj *m = &r->objs[i]; if (m->life <= 0) continue;
+        int dead = 0;
+        for (int st = 0; st < MISSILE_SPEED && !dead; st++) {
+            m->x += m->vx; m->y += m->vy;
+            if (m->x >= r->sx * 8 || m->y >= r->sy * 8 || m->x < MARGIN || m->y < MARGIN) { dead = 1; break; }
+            Box mb = box_of(g, m);
+            for (int k = 0; k < r->nobj; k++) {
+                Obj *q = &r->objs[k]; if (k == i || q->life != 0 || flat(g, q)) continue;
+                if (!overlap(mb, box_of(g, q))) continue;
+                if (has_contact_script(g, q)) {
+                    if (q->hp <= 0) q->hp = CREATURE_HP;
+                    q->hp -= ROCK_POWER; play_sound(g, 0x1a);
+                    if (q->hp <= 0) q->life = -1;                      /* killed: removed below */
+                }
+                dead = 1; break;
+            }
+        }
+        if (--m->life <= 0) dead = 1;
+        if (dead) m->life = -1;
+    }
+    int w = 0; for (int i = 0; i < r->nobj; i++) if (r->objs[i].life >= 0) r->objs[w++] = r->objs[i];
+    r->nobj = w;
+}
 void game_tick(Game *g, int joy) {
     Room *r = &g->rooms[g->cur]; Obj *h = &g->hero;
     int fire_edge = (joy & JOY_FIRE) && !(g->prev_joy & JOY_FIRE), new_dirs = (joy & 15) & ~(g->prev_joy & 15);
@@ -638,6 +685,7 @@ void game_tick(Game *g, int joy) {
     if (g->menu) {                                                                     /* verb menu: the hero stands still */
         if (g->target < 0 || g->nverbs == 0) g->menu = 0;
         else { if (fire_edge) { g->menu = 0; exec_verb(g, g->verbs[g->sel]); } else if (new_dirs) g->sel = move_sel(g, new_dirs); joy &= ~15; }
+    } else if (fire_edge && held_ranged(g)) { fire_weapon(g); joy &= ~15;
     } else if (fire_edge && g->target >= 0 && g->nverbs > 0) { g->menu = 1; g->sel = 0; joy &= ~15; }
     else if (fire_edge && g->target < 0 && !g->jump_t && hero_grounded(g, r)) { g->jump_t = 1; g->jump_z0 = h->z; }    /* fire with nothing in front: jump */
     int dx = ((joy & JOY_RIGHT) ? 1 : 0) - ((joy & JOY_LEFT) ? 1 : 0);
@@ -666,6 +714,7 @@ void game_tick(Game *g, int joy) {
         }
     }
     if (g->pull_pid && g->pull_room != g->cur) g->pull_pid = 0;
+    update_missiles(g);
     g->moving = 0;
     if (dx || dy) {
         g->facing = joy & 15; g->moving = 1;
