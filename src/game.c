@@ -776,8 +776,12 @@ void game_tick(Game *g, int joy) {
             r->objs[i] = r->objs[--r->nobj]; if (hr->valid) hr->objs[hr->nobj++] = back; i--; continue; }
         c->anim = seq[c->stage].f; c->atick = seq[c->stage].t;
     }
-    for (int i = 0; i < r->nobj; i++) { Obj *c = &r->objs[i]; int sl = c->slot; if (sl < 113 || sl > 119 || sl == 116) continue;      /* path-following creatures: 3-frame walk cycle per facing (0-2 = +x, 3-5 = +y, 6-8 = -y, 9-11 = -x; only +x/-x verified), 3 ticks per frame */
-        creature_move(g, r, c); if (g->spr[sl].nfr >= 12) c->anim = ((int[]){ 0, 3, 6, 9 })[c->mdir] + (g->tickno / 3) % 3; }
+    for (int i = 0; i < r->nobj; i++) { Obj *c = &r->objs[i]; int sl = c->slot; if (sl < 113 || sl > 119 || sl == 116) continue;      /* path-following creatures */
+        creature_move(g, r, c);
+        /* walk frames per facing (0 = +x, 1 = +y, 2 = -y, 3 = -x), from the type record programs (sections in the order -x, +y, -y, +x); slots 113 and 119 verified against the emulator for +x/-x/+y */
+        static const struct { int slot, nf, ticks, base[4]; } walk[] = { { 113, 3, 3, { 0, 3, 6, 9 } }, { 117, 3, 3, { 3, 0, 9, 6 } }, { 119, 2, 6, { 2, 0, 4, 6 } } };
+        for (int k = 0; k < (int)(sizeof walk / sizeof walk[0]); k++) if (walk[k].slot == sl && g->spr[sl].nfr >= walk[k].base[3] + walk[k].nf)
+            c->anim = walk[k].base[c->mdir] + (g->tickno / walk[k].ticks) % walk[k].nf; }
     if (g->hurt_cd == 0) {                                  /* contact scripts (event 9 with the hero): creatures, fires, spikes. Original posts it every tick of contact; a 1 s repeat is a guess */
         Box hb = box_of(g, h);
         for (int i = 0; i < r->nobj && g->hurt_cd == 0; i++) {
