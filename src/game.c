@@ -16,9 +16,9 @@
 
 typedef struct { int len; int8_t *data; } Sfx;
 typedef struct { int sfx; double pos, step; int vol; double left; } Voice;   /* left = seconds before the voice is cut (0 = play to the end) */
-typedef struct { int state, w, h; int16_t f[5]; int push; int16_t fx, fy, fz, name; uint8_t c, b16, b17, b1d; uint8_t *px; int aw, ah, ax, ay; uint8_t *apx; } Sprite;
+typedef struct { int state, w, h; int16_t f[5]; int push; int16_t fx, fy, fz, name; uint8_t c, b16, b17, b1d; uint8_t *px; int aw, ah, ax, ay; uint8_t *apx; int nfr; struct { int w, h, dx, dy; uint8_t *px; } fr[10]; } Sprite;
 typedef struct { int16_t hx, hy; int w, h; uint8_t *px; } Frame;
-typedef struct { int x, y, z, slot, flags, pid, xflags; } Obj;       /* x,y = max corner, inclusive box */
+typedef struct { int x, y, z, slot, flags, pid, xflags, anim, atick, home, stage; } Obj;       /* x,y = max corner, inclusive box */
 typedef struct { int x, y, orient; int box[4]; int slot, z, wx, wy; int idx, flags, b7; } Wall;
 typedef struct {
     int valid, x0, y0, sx, sy, basez, org, name, prefix;
@@ -89,7 +89,7 @@ Game *game_load(const char *path) {
         }
         int no = rd16(f); r->objs = calloc((size_t)no + 32, sizeof(Obj)); r->nobj = 0;
         for (int k = 0; k < no; k++) {
-            Obj o; o.pid = rd16(f); o.x = rd8(f); o.y = rd8(f); o.z = rd8(f); o.flags = rd8(f); o.slot = rd16(f); o.xflags = rd8(f);
+            Obj o; o.pid = rd16(f); o.x = rd8(f); o.y = rd8(f); o.z = rd8(f); o.flags = rd8(f); o.slot = rd16(f); o.xflags = rd8(f); o.anim = 0; o.atick = 0; o.home = (int)n; o.stage = 0;
             if (o.flags & 0x80) { if (g->nhid < 128) { g->hid[g->nhid].room = (int)n; g->hid[g->nhid++].o = o; } continue; }   /* not spawned yet: a script can bring it in */
             if (o.slot == 8) { g->hero = o; g->start_hero = o; g->start_room = (int)n; continue; }       /* the player placement */
             r->objs[r->nobj++] = o;
@@ -129,6 +129,10 @@ Game *game_load(const char *path) {
           for (int i = 0; i < nr; i++) { int rn = rd8(f), per = rd8(f), nb = rd8(f); if (rn >= 100) rn = 0; g->rs_period[rn] = per; g->rs_nb[rn] = 0;
               for (int b = 0; b < nb; b++) { int ln = rd8(f); uint8_t *p = malloc(ln ? ln : 1); if (ln > 0) rd(f, p, (size_t)ln);
                   if (g->rs_nb[rn] < 8) g->rs_blk[rn][g->rs_nb[rn]++] = p; else free(p); } } }
+        { int ns = rd16(f); if (ns < 0 || ns > 30) ns = 0;              /* multi-frame creature images */
+          for (int i = 0; i < ns; i++) { int sl = rd8(f), nf = rd8(f); Sprite *sp = &g->spr[sl]; sp->nfr = 0;
+              for (int k = 0; k < nf; k++) { int w = rd16(f), h = rd16(f), dx = rds16(f), dy = rds16(f); uint8_t *px = malloc((size_t)w * h * 4); rd(f, px, (size_t)w * h * 4);
+                  if (k < 10) { sp->fr[k].w = w; sp->fr[k].h = h; sp->fr[k].dx = dx; sp->fr[k].dy = dy; sp->fr[k].px = px; sp->nfr = k + 1; } else free(px); } } }
         g->has_scroll = 1;
     }
     fclose(f);
@@ -141,7 +145,7 @@ Game *game_load(const char *path) {
 
 void game_free(Game *g) {
     if (!g) return;
-    for (int s = 0; s < 255; s++) { free(g->spr[s].px); free(g->spr[s].apx); }
+    for (int s = 0; s < 255; s++) { free(g->spr[s].px); free(g->spr[s].apx); for (int k = 0; k < g->spr[s].nfr; k++) free(g->spr[s].fr[k].px); }
     for (int n = 0; n < g->nframes; n++) free(g->frames[n].px);
     for (int n = 0; n < 100; n++) { free(g->rooms[n].bg); free(g->rooms[n].walls); free(g->rooms[n].objs); }
     free(g->hud);
@@ -309,7 +313,7 @@ static void vm_op(Vm *m, int op) {
         for (int rm = 0; rm < 100 && !got; rm++) { Room *r2 = &g->rooms[rm]; if (!r2->valid || rm == g->cur) continue;
             for (int i = 0; i < r2->nobj; i++) if (r2->objs[i].pid == id) { o2 = r2->objs[i]; r2->objs[i] = r2->objs[--r2->nobj]; got = 1; break; } }
         if (!got) return;
-        o2.flags &= ~0x80; o2.x = x; o2.y = y; o2.z = z << 4; cr->objs[cr->nobj++] = o2; break; }
+        o2.flags &= ~0x80; o2.x = x; o2.y = y; o2.z = z; o2.anim = 8; o2.atick = 8; o2.stage = 0; cr->objs[cr->nobj++] = o2; break; }
     case 0x25: { int n = m->c[m->p], dx = m->c[m->p + 1], dy = m->c[m->p + 2], dz = m->c[m->p + 3]; m->p += 4;   /* create an object next to the target ($10546) */
         Room *rr = &g->rooms[g->cur]; Obj no2; memset(&no2, 0, sizeof no2);
         no2.slot = n; no2.x = m->self->x + dx; no2.y = m->self->y + dy; no2.z = m->self->z + dz; no2.pid = 1000 + g->spawn_pid++;
@@ -567,12 +571,22 @@ void game_tick(Game *g, int joy) {
     int dy = ((joy & JOY_DOWN) ? 1 : 0) - ((joy & JOY_UP) ? 1 : 0);
     g->tickno++;
     if (g->hurt_cd > 0) g->hurt_cd--;
+    for (int i = 0; i < r->nobj; i++) {                      /* water lurker (slot 116): ripples, surfaces, opens its mouth, sinks, then returns to the pool until the next timer. Frame order and timing are read off the emulator, not decoded */
+        Obj *c = &r->objs[i]; if (g->spr[c->slot].nfr < 10 || c->home == g->cur) continue;
+        static const struct { int f, t; } seq[] = { {8, 8}, {9, 8}, {0, 6}, {3, 6}, {4, 16}, {3, 6}, {0, 6}, {9, 8}, {8, 8} };
+        if (--c->atick > 0) continue;
+        c->stage++;
+        if (c->stage >= (int)(sizeof seq / sizeof seq[0])) {
+            Obj back = *c; back.stage = 0; back.anim = 8; back.atick = 8; Room *hr = &g->rooms[back.home];
+            r->objs[i] = r->objs[--r->nobj]; if (hr->valid) hr->objs[hr->nobj++] = back; i--; continue; }
+        c->anim = seq[c->stage].f; c->atick = seq[c->stage].t;
+    }
     if (g->hurt_cd == 0) {                                  /* contact scripts (event 9 with the hero): creatures, fires, spikes. Original posts it every tick of contact; a 1 s repeat is a guess */
         Box hb = box_of(g, h);
         for (int i = 0; i < r->nobj && g->hurt_cd == 0; i++) {
             Obj *q = &r->objs[i]; int has = 0;
             for (int k = 0; k < g->nvm; k++) if (g->vm_pid[k] == (q->pid | 0x8000)) { has = 1; break; }
-            if (!has) continue;
+            if (!has || (g->spr[q->slot].nfr && q->anim >= 8)) continue;
             Box qb = box_of(g, q);
             if (qb.x1 + 1 < hb.x0 || hb.x1 + 1 < qb.x0 || qb.y1 + 1 < hb.y0 || hb.y1 + 1 < qb.y0 || qb.z1 < hb.z0 || hb.z1 < qb.z0) continue;
             for (int k = 0; k < g->nvm; k++) if (g->vm_pid[k] == (q->pid | 0x8000)) { run_script(g, q, g->vm_code[k], g->vm_len[k]); g->hurt_cd = 25; }
@@ -684,7 +698,7 @@ static void blit(uint32_t *fb, const uint8_t *px, int w, int h, int x0, int y0) 
     }
 }
 
-typedef struct { int key, x, y, z, slot; int hero; Box b; int solid; int alt; } DrawItem;
+typedef struct { int key, x, y, z, slot; int hero; Box b; int solid; int alt; int fr; } DrawItem;
 static int cmp_item(const void *a, const void *b) {
     const DrawItem *p = a, *q = b;
     if (p->key != q->key) return p->key - q->key;
@@ -847,7 +861,7 @@ void game_render(const Game *g, uint32_t *fb) {
     DrawItem items[256]; int n = 0;
     for (int i = 0; i < r->nobj && n < 255; i++) {
         const Obj *o = &r->objs[i];
-        items[n++] = (DrawItem){ flat(g, o) ? -1000 : o->x + o->y, o->x, o->y, o->z, o->slot, 0, box_of(g, o), !flat(g, o), (o->flags & 1) && g->spr[o->slot].apx != NULL };
+        items[n++] = (DrawItem){ flat(g, o) ? -1000 : o->x + o->y, o->x, o->y, o->z, o->slot, 0, box_of(g, o), !flat(g, o), (o->flags & 1) && g->spr[o->slot].apx != NULL, g->spr[o->slot].nfr ? o->anim : -1 };
     }
     for (int i = 0; i < r->nwalls && n < 255; i++) {
         const Wall *w = &r->walls[i]; const Sprite *s = &g->spr[w->slot];
@@ -887,6 +901,7 @@ void game_render(const Game *g, uint32_t *fb) {
         if (d->hero) {
             const Frame *fr = &g->frames[hero_frame(g) % g->nframes];
             blit(fb, fr->px, fr->w, fr->h, px + 2 + fr->hx, py + fr->hy);
+        } else if (d->fr >= 0 && d->fr < s->nfr) { blit(fb, s->fr[d->fr].px, s->fr[d->fr].w, s->fr[d->fr].h, px + s->fr[d->fr].dx, py + s->fr[d->fr].dy);
         } else if (d->alt) blit(fb, s->apx, s->aw, s->ah, px + s->ax, py + s->ay);
         else if (s->state == 1) blit(fb, s->px, s->w, s->h, px, py);
     }

@@ -217,4 +217,21 @@ P('H',len(rs))
 for n,per,bl in rs:
     P('BBB',n,per,len(bl))
     for b in bl:P('B',len(b));o+=b
+# multi-frame creature images (water lurker etc.): slot, nframes, per frame w,h,dx,dy (relative to frame 0), RGBA
+cf=[]
+for s_ in range(112,122):
+    e=L.g2.rec(s_)
+    if not e or len(e)<0x30:continue
+    tab=0x28+u16(e,0x22);fr=[]
+    for k in range(10):
+        try:im=L.sprite(s_,k)
+        except Exception:im=None
+        if im is None:break
+        fr.append((k,im))
+    if len(fr)>=10:cf.append((s_,e,tab,fr))
+P('H',len(cf))
+for s_,e,tab,fr in cf:
+    P('BB',s_,len(fr))
+    for k,im in fr:
+        P('HHhh',im.width,im.height,s16(e,tab+8*k+2)-s16(e,tab+2),s16(e,tab+8*k+4)-s16(e,tab+4));o+=im.tobytes()
 open(out,'wb').write(o);print(len(o),'bytes,',len(exam),'examine texts')
