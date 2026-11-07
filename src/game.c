@@ -361,7 +361,7 @@ static void vm_op(Vm *m, int op) {
         if (got && rm < 100 && g->rooms[rm].valid && g->rooms[rm].nobj < 4000) { o2.x = x; o2.y = y; o2.z = z; o2.flags &= ~0x80; g->rooms[rm].objs[g->rooms[rm].nobj++] = o2; }
         break; }
     case 0x26: { int n = m->c[m->p], v = m->c[m->p + 1]; m->p += 2; g->counter[n] = (uint8_t)v; break; }              /* set counter n ($1078c) */
-    case 0x30: m->cond = m->cond == 0; m->p++; vm_op(m, 0x0e); break;                                              /* block runs when the condition FAILED ($10222) */
+    case 0x30: m->cond = m->cond == 0; vm_op(m, 0x0e); break;                                              /* block runs when the condition FAILED ($10222) */
     case 0x31: { int i = m->c[m->p], v = m->c[m->p + 1]; m->p += 2; g->gflag[i] = (uint8_t)v; break; }              /* global flag byte ($108d8) */
     case 0x4c: { int n = m->c[m->p++]; m->cond = (g->gbits >> (n & 31) & 1) ? m->cond + 1 : 0; break; }            /* global bit n set ($108cc) */
     case 0x2f: { int id = vm_word(m); Obj *q = id >= 0x8000 ? m->self : find_obj(g, id); m->cond = q ? m->cond + 1 : 0; break; }   /* object exists ($108bc) */
