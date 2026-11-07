@@ -206,11 +206,12 @@ static int overlap(Box a, Box b) {
 }
 static int flat(const Game *g, const Obj *o) { const Sprite *s = &g->spr[o->slot]; return o->slot != 8 && !s->push && s->fz <= 2; }   /* floor decals: walk-over, drawn under everything */
 /* Walking pushes only light objects (type byte +$c bit 1, the TAKE bit); bit 0 alone = heavy furniture (altars, pillars) that only the MOVE verb could shift. */
+static int has_contact_script(const Game *g, const Obj *o) { for (int k = 0; k < g->nvm; k++) if (g->vm_pid[k] == (o->pid | 0x8000)) return 1; return 0; }
 static int pushable(const Game *g, const Obj *o) {
     if (o->slot == 8) return 0;
     const Sprite *s = &g->spr[o->slot];
     if (s->push & 2) return 1;                                  /* light objects (TAKE bit) */
-    if ((s->c & 5) == 5) return 1;                              /* chests, crates: MOVE icon + c bit 2 */
+    if ((s->c & 5) == 5 && !has_contact_script(g, o)) return 1;      /* chests, crates: MOVE icon + c bit 2 (creatures also have the bits but fight back) */
     /* barrels and jars: MOVE-icon objects with a small footprint and moderate height; altars, pillars and tables are bigger or taller */
     return (s->c & 1) && !(o->xflags & 4) && s->fx <= 7 && s->fy <= 7 && s->fz >= 10 && s->fz <= 24;
 }
