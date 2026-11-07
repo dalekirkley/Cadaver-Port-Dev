@@ -10,6 +10,7 @@
 #include <string.h>
 #include <stdlib.h>
 #include "game.h"
+#include "intro.h"
 #include "crt.h"
 #include "d3d_present.h"
 
@@ -131,19 +132,20 @@ int WINAPI WinMain(HINSTANCE hi, HINSTANCE hp, LPSTR cmd, int show) {
     timeBeginPeriod(1); audio_init();
     LARGE_INTEGER fq, t0; QueryPerformanceFrequency(&fq); QueryPerformanceCounter(&t0);
     double next = 0, tick = 1.0 / TICK_HZ;
+    Intro *intro = getenv("CADAVER_NOINTRO") ? NULL : intro_load("data\\intro.bin");     /* optional title sequence */
     while (running) {
         MSG m; while (PeekMessage(&m, NULL, 0, 0, PM_REMOVE)) { if (m.message == WM_QUIT) running = 0; TranslateMessage(&m); DispatchMessage(&m); }
         LARGE_INTEGER now; QueryPerformanceCounter(&now); double t = (double)(now.QuadPart - t0.QuadPart) / fq.QuadPart;
         int steps = 0;
-        while (t >= next && steps < 5) { game_tick(g, read_joy()); next += tick; steps++; }
+        while (t >= next && steps < 5) { if (intro) { if (intro_tick(intro, read_joy())) { intro_free(intro); intro = NULL; } } else game_tick(g, read_joy()); next += tick; steps++; }
         if (steps > 4) next = t;
         { int rl = game_level_request(g); if (rl) pending_level = rl; }
         if (pending_level) {
             char p[64]; snprintf(p, sizeof p, "data\\level%d.bin", pending_level); pending_level = 0;
             Game *ng = game_load(p); if (ng) { game_free(g); g = ng; g_game = g; next = t; }
         }
-        audio_pump(g);
-        game_render(g, fb);
+        if (!intro) audio_pump(g);
+        if (intro) intro_render(intro, fb); else game_render(g, fb);
         { static char last[512]; char dt[512];                      /* F12: debug line in the title and in cadaver_debug.txt */
           int on = game_debug_text(g, dt, sizeof dt);
           if (!on) strcpy(dt, "Cadaver (native)");

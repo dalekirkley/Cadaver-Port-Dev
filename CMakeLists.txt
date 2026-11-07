@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.10)
 project(CadaverNative C)
 set(CMAKE_C_STANDARD 99)
-add_library(cadaver_game STATIC src/game.c src/crt.c)
+add_library(cadaver_game STATIC src/game.c src/crt.c src/intro.c)
 if(NOT WIN32)
   target_link_libraries(cadaver_game m)
 endif()
