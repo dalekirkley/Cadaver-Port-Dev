@@ -47,7 +47,7 @@ struct Game {
     Obj hero;                         /* hero.slot = 8 */
     int facing, anim_t, moving;
     uint8_t font[46 * 24], fontmap[32]; char **text; int ntext; int day; int energy; int jump_t, jump_z0;
-    int has_scroll; uint8_t scroll_tiles[18 * 32], scroll_map[0x30], font5[46 * 20]; int nexam, nuse, ntake; uint16_t take_pid[512]; int16_t take_gold[512], take_xp[512]; uint8_t counter[256]; int nhid; struct { int room; Obj o; } hid[128]; int hurt_cd; int want_level; int pull_pid, pull_room; int spawn_pid; int rs_period[100], rs_nb[100]; uint8_t *rs_blk[100][16]; int tm_room, tm_left; int nch; uint16_t ch_pid[64], ch_cont[64], ch_key[64]; uint8_t ch_flags[64], ch_trap[64]; int dbg, dbg_verb, dbg_pid, dbg_ran, dbg_execs; unsigned dbg_log[4][3]; unsigned char dbg_tr[48]; int dbg_ntr; int nvm; uint16_t vm_pid[256]; uint8_t vm_len[256], vm_code[256][255]; uint16_t exam_pid[512], exam_text[512], use_pid[512], use_text[512];   /* examine scroll */
+    int has_scroll; uint8_t scroll_tiles[18 * 32], scroll_map[0x30], font5[46 * 20]; int nexam, nuse, ntake; uint16_t take_pid[512]; int16_t take_gold[512], take_xp[512]; uint8_t counter[256], gflag[256]; uint32_t gbits; int nhid; struct { int room; Obj o; } hid[128]; int hurt_cd; int want_level; int pull_pid, pull_room; int spawn_pid; int rs_period[100], rs_nb[100]; uint8_t *rs_blk[100][16]; int tm_room, tm_left; int nch; uint16_t ch_pid[64], ch_cont[64], ch_key[64]; uint8_t ch_flags[64], ch_trap[64]; int dbg, dbg_verb, dbg_pid, dbg_ran, dbg_execs; unsigned dbg_log[4][3]; unsigned char dbg_tr[48]; int dbg_ntr; int nvm; uint16_t vm_pid[256]; uint8_t vm_len[256], vm_code[256][255]; uint16_t exam_pid[512], exam_text[512], use_pid[512], use_text[512];   /* examine scroll */
     int scroll_t; char scroll_str[256]; long score; int map_open, map_px, map_py, status_open; long gold, xp, level; uint8_t visited[100];
     int has_icons; uint8_t icons[20 * 112]; uint16_t slotpos[8][4]; uint8_t verbtab[16];
     int target, nverbs, verbs[8], menu, sel, prev_joy, msg, msg_t, ninv, inv[64], inv_slot[64], inv_mode, inv_sel, inv_hold;     /* verb menu state */
@@ -354,6 +354,25 @@ static void vm_op(Vm *m, int op) {
             for (int i = 0; i < q->nobj; i++) if (q->objs[i].pid == id) { o2 = q->objs[i]; q->objs[i] = q->objs[--q->nobj]; got = 1; break; } }
         if (got && rm < 100 && g->rooms[rm].valid && g->rooms[rm].nobj < 4000) { o2.x = x; o2.y = y; o2.z = z; o2.flags &= ~0x80; g->rooms[rm].objs[g->rooms[rm].nobj++] = o2; }
         break; }
+    case 0x26: { int n = m->c[m->p], v = m->c[m->p + 1]; m->p += 2; g->counter[n] = (uint8_t)v; break; }              /* set counter n ($1078c) */
+    case 0x30: m->cond = m->cond == 0; m->p++; vm_op(m, 0x0e); break;                                              /* block runs when the condition FAILED ($10222) */
+    case 0x31: { int i = m->c[m->p], v = m->c[m->p + 1]; m->p += 2; g->gflag[i] = (uint8_t)v; break; }              /* global flag byte ($108d8) */
+    case 0x4c: { int n = m->c[m->p++]; m->cond = (g->gbits >> (n & 31) & 1) ? m->cond + 1 : 0; break; }            /* global bit n set ($108cc) */
+    case 0x2f: { int id = vm_word(m); Obj *q = id >= 0x8000 ? m->self : find_obj(g, id); m->cond = q ? m->cond + 1 : 0; break; }   /* object exists ($108bc) */
+    case 0x2b: { int id = vm_word(m); int rm = m->c[m->p++]; if (rm == 0xfe) rm = g->cur; int in = 0;                /* object is in room rm ($103a8) */
+        for (int r2 = 0; r2 < 100 && !in; r2++) { Room *q = &g->rooms[r2]; if (!q->valid) continue; for (int i = 0; i < q->nobj; i++) if (q->objs[i].pid == id) { in = (r2 == rm); r2 = 100; break; } }
+        for (int i = 0; i < g->nhid && !in; i++) if (g->hid[i].o.pid == id && g->hid[i].room == rm) in = 1;
+        m->cond = in ? m->cond + 1 : 0; break; }
+    case 0x15: { int id = vm_word(m); Obj *q = id >= 0x8000 ? m->self : find_obj(g, id); if (q) q->flags &= ~2; break; }   /* clear placement flag bit 1 ($1030c) */
+    case 0x32: { int id = vm_word(m); Obj *q = id >= 0x8000 ? m->self : find_obj(g, id);                            /* post the destroy event (0x17) to an object ($1002c): it is removed */
+        if (q && q != &g->hero) q->life = -1; break; }
+    case 0x06: { int n = m->c[m->p++]; g->xp += n; g->gold += n >> 2; play_sound(g, 3); break; }                       /* experience (and a quarter of it as gold) ($ffdc) */
+    case 0x4a: { int id = vm_word(m);                                                                              /* reveal a hidden object ($10068) */
+        for (int i = 0; i < g->nhid; i++) if (g->hid[i].o.pid == id) {
+            Room *r2 = &g->rooms[g->hid[i].room]; Obj o2 = g->hid[i].o; o2.flags &= ~0x80;
+            r2->objs[r2->nobj++] = o2; g->hid[i] = g->hid[--g->nhid]; break; }
+        break; }
+    case 0x1a: { int id = vm_word(m); Obj *q = id >= 0x8000 ? m->self : find_obj(g, id); if (q && q != &g->hero) q->life = -1; break; }   /* despawn an object ($fea4) */
     case 0x3a: { int n = m->c[m->p];                                  /* run the block only if exactly n conditions held ($10236); layout as 0e */
         m->cond = (m->cond == n) ? 1 : 0; m->p++; vm_op(m, 0x0e); break; }
     case 0x1f: m->self->flags &= ~1; break;
@@ -362,7 +381,7 @@ static void vm_op(Vm *m, int op) {
     case 0x22: { int id = vm_word(m), has = 0; for (int i = 0; i < g->ninv; i++) if (g->inv[i] == id) has = 1; m->cond = has ? m->cond + 1 : 0; break; }
     case 0x27: { int n = m->c[m->p]; int add = m->c[m->p + 1]; m->p += 2; g->counter[n] = (uint8_t)(g->counter[n] + add); break; }
     case 0x28: { int n = m->c[m->p], mode = m->c[m->p + 1], v = m->c[m->p + 2], x = g->counter[n]; m->p += 3;
-        int ok = mode == 0 ? x <= v : mode == 1 ? x >= v : mode == 2 ? x != v : x == v;      /* modes as in $107aa: 0 le, 1 ge, 2 ne, 3 eq */
+        int ok = mode == 0 ? x > v : mode == 1 ? x < v : mode == 2 ? x == v : x != v;      /* modes as in $107aa (cmp d2,d3 = counter - v): 0 gt, 1 lt, 2 eq, 3 ne */
         m->cond = ok ? m->cond + 1 : 0; break; }
     case 0x1b: { int w = m->c[m->p++]; int v = vm_word(m); if (w < MAX_WALLIDX) { g->wallflag[w] = (uint16_t)v; if (v) g->walldoor[w] = 1; } break; }
     case 0x0a: { int w = m->c[m->p++]; if (w < MAX_WALLIDX && g->wallflag[w]) { g->wallflag[w] = 0; play_sound(g, 0x12); } break; }
