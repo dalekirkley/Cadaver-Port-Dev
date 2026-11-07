@@ -541,7 +541,20 @@ void game_tick(Game *g, int joy) {
             if (out) try_exit(g, dx, dy); else try_step_up(g, r, dx, dy);
         }
     }
-    if (g->jump_t) { h->z = g->jump_z0 + JUMP_Z[g->jump_t - 1]; if (++g->jump_t > 20) g->jump_t = 0; }
+    if (g->jump_t) {
+        int prevz = h->z, nz = g->jump_z0 + JUMP_Z[g->jump_t - 1], land = -1;
+        if (g->jump_t > 10 || nz < prevz) {                                   /* descending: land on the highest object top passed through */
+            Box hb = box_of(g, h);
+            for (int i = 0; i < r->nobj; i++) {
+                const Obj *q = &r->objs[i]; if (flat(g, q)) continue;
+                Box qb = box_of(g, q);
+                if (qb.x1 < hb.x0 || hb.x1 < qb.x0 || qb.y1 < hb.y0 || hb.y1 < qb.y0) continue;
+                int top = qb.z1 + 1; if (prevz >= top && nz <= top && top > land) land = top;
+            }
+        }
+        if (land >= 0) { h->z = land; g->jump_t = 0; }
+        else { h->z = nz; if (++g->jump_t > 20) g->jump_t = 0; }
+    }
     else hero_gravity(g, r);
     /* Walking animation + footsteps, timed from an emulator trace of the original: each of the 4 walk frames is shown
        for 3 logic ticks; a footstep (sample 22, period 320, volume 8, cut after 4 video frames = 80 ms) sounds when the
