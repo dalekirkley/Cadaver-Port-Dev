@@ -224,9 +224,16 @@ for n,per,bl in rs:
     for b in bl:P('B',len(b));o+=b
 # multi-frame creature images (water lurker etc.): slot, nframes, per frame w,h,dx,dy (relative to frame 0), RGBA
 cf=[]
-for s_ in range(111,122):
+mvslots=set()
+for pid in range(1024):                                       # creature types of later levels live in other slots: every type with a movement program and an animation program
+    pr=L.g6.rec(pid)
+    if len(pr)>0xd+0xe and pr[0xd] and pr[0xd]+0xe<len(pr):mvslots.add(u16(pr,6))
+for s_ in range(255):                                         # ... and every animated prop (multi-image type with behaviour flag)
     e=L.g2.rec(s_)
-    if not e or len(e)<0x30:continue
+    if s_!=8 and e and len(e)>=0x30 and s16(e,0x18)<0 and e[0x0c]&4 and e[0x0c]&0x40 and e[0x20]>1:mvslots.add(s_)
+for s_ in sorted(set(range(111,122))|{x for x in mvslots if x not in (8,) and x<255}):
+    e=L.g2.rec(s_)
+    if not e or len(e)<0x30 or (s_>=122 and not (e[0x0c]&4 and e[0x0c]&0x40)):continue
     tab=0x28+u16(e,0x22);fr=[]
     for k in range(16):
         try:im=L.sprite(s_,k)
@@ -283,4 +290,24 @@ for s_ in range(255):
     if (dx or dy) and abs(dx)<64 and abs(dy)<64:f0.append((s_,dx,dy))
 P('B',1);P('H',len(f0))
 for s_,dx,dy in f0:P('Bhh',s_,dx,dy)
+# animation programs (optional, last section): for every multi-image type record with behaviour (flag bit 6) the program bytes (2-byte steps from +0x28
+# up to the frame table, interpreted like the original's stepper at $a97c, see animation-tokens.md), then per placement the initial animation record
+# (placement[+0xe]: mode, frame, reverse, pc, divider counter, divider reload).
+progs={}
+for s_ in range(255):
+    e=L.g2.rec(s_)
+    if not e or len(e)<0x30 or s16(e,0x18)>=0 or not (e[0x0c]&4 and e[0x0c]&0x40) or e[0x20]==0:continue
+    tab=0x28+u16(e,0x22)
+    if 0<tab-0x28<=510:progs[s_]=bytes(e[0x28:tab])
+P('B',1);P('H',len(progs))
+for s_,b in progs.items():P('BH',s_,len(b));o+=b
+pl=[]
+for pid in range(1024):
+    pr=L.g6.rec(pid)
+    if len(pr)<16 or u16(pr,6) not in progs:continue
+    q=pr[0xe]
+    if q+10>len(pr):continue
+    pl.append((pid,pr[q],pr[q+1],pr[q+2],pr[q+3],pr[q+8],pr[q+9]))
+P('H',len(pl))
+for t in pl:P('H6B',*t)
 open(out,'wb').write(o);print(len(o),'bytes,',len(exam),'examine texts')
