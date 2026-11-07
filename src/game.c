@@ -206,7 +206,14 @@ static int overlap(Box a, Box b) {
 }
 static int flat(const Game *g, const Obj *o) { const Sprite *s = &g->spr[o->slot]; return o->slot != 8 && !s->push && s->fz <= 2; }   /* floor decals: walk-over, drawn under everything */
 /* Walking pushes only light objects (type byte +$c bit 1, the TAKE bit); bit 0 alone = heavy furniture (altars, pillars) that only the MOVE verb could shift. */
-static int pushable(const Game *g, const Obj *o) { return o->slot != 8 && ((g->spr[o->slot].push & 2) != 0 || (g->spr[o->slot].c & 5) == 5); }   /* chests, barrels and crates: MOVE icon (bit 0) together with c bit 2; bit 0 alone = fixed furniture (altars, pillars) */
+static int pushable(const Game *g, const Obj *o) {
+    if (o->slot == 8) return 0;
+    const Sprite *s = &g->spr[o->slot];
+    if (s->push & 2) return 1;                                  /* light objects (TAKE bit) */
+    if ((s->c & 5) == 5) return 1;                              /* chests, crates: MOVE icon + c bit 2 */
+    /* barrels and jars: MOVE-icon objects with a small footprint and moderate height; altars, pillars and tables are bigger or taller */
+    return (s->c & 1) && !(o->xflags & 4) && s->fx <= 7 && s->fy <= 7 && s->fz >= 10 && s->fz <= 24;
+}
 
 /* Try to move o by (dx,dy); every overlapping object must itself be pushable and movable. */
 static int try_move(Game *g, Room *r, Obj *o, int dx, int dy, int depth) {
