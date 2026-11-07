@@ -1,5 +1,8 @@
 #include "game.h"
 #include "sound_table.h"
+#include "sound_seq.h"
+#define SND_TICK_SEC 0.005      /* seconds per script tick: the original rate is not known (0.02 would be one 50 Hz frame); tune by ear */
+#define SND_MAX_SEC 4.0         /* a script never runs longer than this */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -15,7 +18,8 @@
 #define WALK_TICKS_PER_FRAME 3   /* measured in the original: 6 video frames per walk frame */
 
 typedef struct { int len; int8_t *data; } Sfx;
-typedef struct { int sfx; double pos, step; int vol; double left; } Voice;   /* left = seconds before the voice is cut (0 = play to the end) */
+typedef struct { int sfx; double pos, step; int vol; double left, total; } Voice;
+typedef struct { const SndEv *ev; int n, i, mv, snd; double t, el; } SeqVoice;   /* left = seconds before the voice is cut (0 = play to the end) */
 typedef struct { int state, w, h; int16_t f[5]; int push; int16_t fx, fy, fz, name; uint8_t c, b16, b17, b1d; uint8_t *px; int aw, ah, ax, ay; uint8_t *apx; int nfr; struct { int w, h, dx, dy; uint8_t *px; } fr[10]; } Sprite;
 typedef struct { int16_t hx, hy; int w, h; uint8_t *px; } Frame;
 typedef struct { int x, y, z, slot, flags, pid, xflags, anim, atick, home, stage; } Obj;       /* x,y = max corner, inclusive box */
@@ -44,7 +48,7 @@ struct Game {
     int target, nverbs, verbs[8], menu, sel, prev_joy, msg, msg_t, ninv, inv[64], inv_slot[64], inv_mode, inv_sel, inv_hold;     /* verb menu state */
     uint16_t wallflag[MAX_WALLIDX]; uint8_t walldoor[MAX_WALLIDX]; int bump_timer;    /* wall-record flags, shared by the two rooms a wall joins */
     unsigned tickno; int walk_ticks, walk_step, start_room; Obj start_hero;
-    Sfx sfx[65]; Voice voice[4];
+    Sfx sfx[65]; Voice voice[4]; SeqVoice sq[8];
     uint8_t *hud;                      /* 320*200*4 bottom panel frame, or NULL */
 };
 
@@ -162,29 +166,42 @@ void game_hero(const Game *g, int *x, int *y, int *z) { *x = g->hero.x; *y = g->
 
 /* ---------------------------------------------------------------- sound */
 /* Original Paula clock: 3546895 / period = sample rate; volume is Paula's 0..64. */
-static void play_voice(Game *g, int id, int period, int vol, double seconds) {
-    if (id < 0 || id >= 65 || !g->sfx[id].len) return;
+static int play_voice(Game *g, int id, int period, int vol, double seconds) {
+    if (id < 0 || id >= 74 || (id < 65 && !g->sfx[id].len)) return -1;
     int v = 0; for (int i = 0; i < 4; i++) if (!g->voice[i].step) { v = i; break; }
-    g->voice[v].sfx = id; g->voice[v].pos = 0; g->voice[v].step = 3546895.0 / period; g->voice[v].vol = vol; g->voice[v].left = seconds;
+    g->voice[v].sfx = id; g->voice[v].pos = 0; g->voice[v].step = 3546895.0 / period; g->voice[v].vol = vol; g->voice[v].left = seconds; g->voice[v].total = seconds; return v;
 }
 
 /* Play a game sound id with its real per-voice samples, periods and volumes. */
 static void play_sound(Game *g, int snd) {
     if (snd < 0 || snd >= 69) return;
     for (int i = 0; i < 4; i++) {
-        const SndVoice *sv = &SND_TABLE[snd][i];
-        if (sv->sample >= 0) play_voice(g, sv->sample, sv->period, sv->vol, snd == 0 ? 0.1 : 0.6);
+        int n = SND_IDX[snd][i][1]; if (!n) continue;
+        int k = -1; for (int q = 0; q < 8; q++) if (!g->sq[q].ev) { k = q; break; }
+        if (k < 0) k = 0;
+        g->sq[k].ev = &SND_EV[SND_IDX[snd][i][0]]; g->sq[k].n = n; g->sq[k].i = 0; g->sq[k].t = 0; g->sq[k].mv = -1; g->sq[k].snd = snd; g->sq[k].el = 0;
     }
 }
 
 void game_audio_mix(Game *g, int16_t *out, int n, int rate) {
     for (int i = 0; i < n; i++) {
         int acc = 0;
+        for (int q = 0; q < 8; q++) {                                           /* note sequencers */
+            SeqVoice *sq = &g->sq[q]; if (!sq->ev) continue;
+            if ((sq->t -= 1.0 / rate) > 0) continue;
+            if (sq->i >= sq->n) { sq->ev = NULL; continue; }
+            const SndEv *e = &sq->ev[sq->i]; int last = sq->i == sq->n - 1;
+            if (sq->mv >= 0) g->voice[sq->mv].step = 0;
+            if (e->sample >= 0) sq->mv = play_voice(g, e->sample, e->period, e->vol, (last && e->sample < 65) ? (sq->snd == 0 ? 0.1 : 0.6) : e->ticks * SND_TICK_SEC); else sq->mv = -1;
+            sq->t += e->ticks * SND_TICK_SEC; sq->i++; sq->el += e->ticks * SND_TICK_SEC; if (sq->el > SND_MAX_SEC) sq->i = sq->n;
+        }
         for (int v = 0; v < 4; v++) {
             Voice *vo = &g->voice[v]; if (!vo->step) continue;
-            const Sfx *s = &g->sfx[vo->sfx]; int p = (int)vo->pos;
-            if (p >= s->len) { vo->step = 0; continue; }
-            acc += s->data[p] * vo->vol; vo->pos += vo->step / rate;
+            int syn = vo->sfx >= 65, p = (int)vo->pos, len, sv;
+            if (syn) { len = SYN_LEN[vo->sfx - 65]; if (!len) { vo->step = 0; continue; } p %= len; sv = SYN_DATA[vo->sfx - 65][p]; if (vo->left > 0 && vo->total > 0) sv = (int)(sv * (vo->left / vo->total)); }   /* synth note: looped cycle with a linear fade */
+            else { const Sfx *s = &g->sfx[vo->sfx]; if (p >= s->len) { vo->step = 0; continue; } sv = s->data[p]; }
+            acc += sv * vo->vol; vo->pos += vo->step / rate;
+            if (syn && vo->pos >= 1e9) vo->pos = 0;
             if (vo->left > 0 && (vo->left -= 1.0 / rate) <= 0) vo->step = 0;
         }
         acc = acc * 4; if (acc > 32767) acc = 32767; if (acc < -32768) acc = -32768;
@@ -1012,3 +1029,5 @@ void game_cycle_room(Game *g, int dir) {
     if (!g->rooms[n].valid) return;
     g->cur = n; g->hero.x = g->rooms[n].sx * 4; g->hero.y = g->rooms[n].sy * 4; g->hero.z = 0; g->menu = 0; g->jump_t = 0; g->visited[n] = 1;
 }
+
+void game_play_sound(Game *g, int snd) { play_sound(g, snd); }   /* debug/test: trigger a sound id */

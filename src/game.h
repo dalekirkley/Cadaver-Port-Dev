@@ -26,6 +26,7 @@ void game_tick(Game *g, int joy);            /* one 25 Hz logic step */
 void game_render(const Game *g, uint32_t *rgba_out); /* 320x200, 0xAABBGGRR little endian = R,G,B,A bytes */
 /* Mix mono signed 16-bit audio at `rate` Hz (call from the audio thread / pump). */
 void game_audio_mix(Game *g, int16_t *out, int n, int rate);
+void game_play_sound(Game *g, int snd);   /* test: trigger a sound id */
 int game_room(const Game *g);
 void game_warp(Game *g, int room, int x, int y, int z);
 int game_debug_text(const Game *g, char *buf, int n);
