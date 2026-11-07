@@ -792,6 +792,7 @@ void game_tick(Game *g, int joy) {
         static const struct { int slot, nf, ticks, base[4]; } walk[] = { { 113, 3, 3, { 0, 3, 6, 9 } }, { 117, 3, 3, { 3, 0, 9, 6 } }, { 119, 2, 6, { 2, 0, 4, 6 } } };
         for (int k = 0; g->lvl1 && k < (int)(sizeof walk / sizeof walk[0]); k++) if (walk[k].slot == sl && g->spr[sl].nfr >= walk[k].base[3] + walk[k].nf)
             c->anim = walk[k].base[c->mdir] + (g->tickno / walk[k].ticks) % walk[k].nf; }
+        if (g->lvl1 && sl == 118 && g->spr[118].nfr >= 5) c->anim = g->tickno % 12 < 4 ? 4 : 2;      /* hovering creature of room 21: frame 4 for 4 ticks then frame 2 for 8 (emulator), whichever way it moves */
     if (g->hurt_cd == 0) {                                  /* contact scripts (event 9 with the hero): creatures, fires, spikes. Original posts it every tick of contact; a 1 s repeat is a guess */
         Box hb = box_of(g, h);
         for (int i = 0; i < r->nobj && g->hurt_cd == 0; i++) {
