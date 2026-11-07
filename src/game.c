@@ -47,7 +47,7 @@ struct Game {
     Obj hero;                         /* hero.slot = 8 */
     int facing, anim_t, moving;
     uint8_t font[46 * 24], fontmap[32]; char **text; int ntext; int day; int energy; int jump_t, jump_z0;
-    int has_scroll; uint8_t scroll_tiles[18 * 32], scroll_map[0x30], font5[46 * 20]; int nexam, nuse, ntake; uint16_t take_pid[512]; int16_t take_gold[512], take_xp[512]; uint8_t counter[256], gflag[256]; uint32_t gbits; int nhid; struct { int room; Obj o; } hid[128]; int hurt_cd; unsigned rng_seed, rng_last; int want_level; int pull_pid, pull_room; int spawn_pid; int rs_period[100], rs_nb[100]; uint8_t *rs_blk[100][16]; int tm_room, tm_left; uint8_t mv_prog[512][96]; uint8_t mv_len[512], mv_step[512][3], mv_pat[512]; int lvl1; int nch; uint16_t ch_pid[64], ch_cont[64], ch_key[64]; uint8_t ch_flags[64], ch_trap[64]; int dbg, dbg_verb, dbg_pid, dbg_ran, dbg_execs; unsigned dbg_log[4][3]; unsigned char dbg_tr[48]; int dbg_ntr; int nvm; uint16_t vm_pid[256]; uint8_t vm_len[256], vm_code[256][255]; uint16_t exam_pid[512], exam_text[512], use_pid[512], use_text[512];   /* examine scroll */
+    int has_scroll; uint8_t scroll_tiles[18 * 32], scroll_map[0x30], font5[46 * 20]; int nexam, nuse, ntake; uint16_t take_pid[512]; int16_t take_gold[512], take_xp[512]; uint8_t counter[256], gflag[256]; uint32_t gbits; int nhid; struct { int room; Obj o; } hid[128]; int hurt_cd; unsigned rng_seed, rng_last; int ent_tick; int want_level; int pull_pid, pull_room; int spawn_pid; int rs_period[100], rs_nb[100]; uint8_t *rs_blk[100][16]; int tm_room, tm_left; uint8_t mv_prog[512][96]; uint8_t mv_len[512], mv_step[512][3], mv_pat[512]; int lvl1; int nch; uint16_t ch_pid[64], ch_cont[64], ch_key[64]; uint8_t ch_flags[64], ch_trap[64]; int dbg, dbg_verb, dbg_pid, dbg_ran, dbg_execs; unsigned dbg_log[4][3]; unsigned char dbg_tr[48]; int dbg_ntr; int nvm; uint16_t vm_pid[256]; uint8_t vm_len[256], vm_code[256][255]; uint16_t exam_pid[512], exam_text[512], use_pid[512], use_text[512];   /* examine scroll */
     int scroll_t; char scroll_str[256]; long score; int map_open, map_px, map_py, status_open; long gold, xp, level; uint8_t visited[100];
     int has_icons; uint8_t icons[20 * 112]; uint16_t slotpos[8][4]; uint8_t verbtab[16];
     int target, nverbs, verbs[8], menu, sel, prev_joy, msg, msg_t, ninv, inv[64], inv_slot[64], inv_mode, inv_sel, inv_hold;     /* verb menu state */
@@ -716,7 +716,7 @@ void game_tick(Game *g, int joy) {
     if (fire_edge && !g->menu) g->pull_pid = 0;                 /* fire ends pull mode (choosing MOVE itself happens inside the menu below) */
     int prev = g->prev_joy; g->prev_joy = joy;
     int first_visit = !g->visited[g->cur]; g->visited[g->cur] = 1;
-    if (g->tm_room != g->cur + 1) { g->tm_room = g->cur + 1; g->tm_left = g->rs_period[g->cur] * 17;          /* room timer restarts on entry */
+    if (g->tm_room != g->cur + 1) { g->tm_room = g->cur + 1; g->ent_tick = g->tickno; g->tm_left = g->rs_period[g->cur] * 17;          /* room timer restarts on entry */
         for (int ev = first_visit ? 0x1c : 0x06; ev >= 0x06; ev -= 0x16) {                              /* entry events: 0x1c on the first visit ($e51c), then 0x06 on every entry ($e74e); they spawn most monsters */
             int room = g->cur;
             for (int b = 0; b < g->rs_nb[room]; b++) { const uint8_t *c = g->rs_blk[room][b]; if ((c[1] & 0x7f) != ev) continue;
@@ -1205,6 +1205,17 @@ void game_render(const Game *g, uint32_t *fb) {
     }
     if (g->inv_mode && g->ninv) draw_rucksack(g, fb);
     else if (g->hud) draw_energy(g, fb);
+    if (g->lvl1 && g->cur == 36) {                                   /* dragon room lightning (the dragon's behaviour routine $96364 calls service $1c = palette flash: the 16 colours alternate white/black in a checker pattern for 16 video frames); measured calls at 0, 103, 422, 525 video frames after load = ticks 0, 52 of every 211 */
+        int t = (g->tickno - g->ent_tick) % 211, ph = t < 8 ? t : (t >= 52 && t < 60) ? t - 52 : -1;
+        if (ph >= 0) {
+            static const uint8_t pat[16] = { 1, 0, 0, 1, 1, 0, 0, 0, 1, 1, 1, 0, 0, 1, 1, 0 };
+            for (int i = 0; i < SCREEN_W * SCREEN_H; i++) {
+                uint32_t px = fb[i]; int r = px & 255, gg = (px >> 8) & 255, b = (px >> 16) & 255, best = 0, bd = 1 << 30;
+                for (int k = 0; k < 16; k++) { int dr = r - g->pal[k][0], dg = gg - g->pal[k][1], db = b - g->pal[k][2], d = dr * dr + dg * dg + db * db; if (d < bd) { bd = d; best = k; } }
+                fb[i] = ((pat[best] ^ (ph & 1)) ? 0xFFFFFFFFu : 0xFF000000u);
+            }
+        }
+    }
     if (g->scroll_t > 0) draw_scroll(g, fb);
     if (g->map_open && g->has_scroll) draw_map(g, fb);
     if (g->status_open && g->has_scroll) draw_status(g, fb);
