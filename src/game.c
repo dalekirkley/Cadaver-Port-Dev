@@ -38,7 +38,7 @@ struct Game {
     Obj hero;                         /* hero.slot = 8 */
     int facing, anim_t, moving;
     uint8_t font[46 * 24], fontmap[32]; char **text; int ntext; int day; int energy; int jump_t, jump_z0;
-    int has_scroll; uint8_t scroll_tiles[18 * 32], scroll_map[0x30], font5[46 * 20]; int nexam, nuse, ntake; uint16_t take_pid[512]; int16_t take_gold[512], take_xp[512]; uint8_t counter[256]; int nhid; struct { int room; Obj o; } hid[128]; int dbg, dbg_verb, dbg_pid, dbg_ran, dbg_execs; int nvm; uint16_t vm_pid[256]; uint8_t vm_len[256], vm_code[256][255]; uint16_t exam_pid[512], exam_text[512], use_pid[512], use_text[512];   /* examine scroll */
+    int has_scroll; uint8_t scroll_tiles[18 * 32], scroll_map[0x30], font5[46 * 20]; int nexam, nuse, ntake; uint16_t take_pid[512]; int16_t take_gold[512], take_xp[512]; uint8_t counter[256]; int nhid; struct { int room; Obj o; } hid[128]; int dbg, dbg_verb, dbg_pid, dbg_ran, dbg_execs; unsigned dbg_log[4][3]; int nvm; uint16_t vm_pid[256]; uint8_t vm_len[256], vm_code[256][255]; uint16_t exam_pid[512], exam_text[512], use_pid[512], use_text[512];   /* examine scroll */
     int scroll_t; char scroll_str[256]; long score; int map_open, map_px, map_py, status_open; long gold, xp, level; uint8_t visited[100];
     int has_icons; uint8_t icons[20 * 112]; uint16_t slotpos[8][4]; uint8_t verbtab[16];
     int target, nverbs, verbs[8], menu, sel, prev_joy, msg, msg_t, ninv, inv[64];     /* verb menu state */
@@ -382,7 +382,7 @@ static void say(Game *g, int text_id) { g->msg = text_id; g->msg_t = 50; }
 static void exec_verb(Game *g, int verb) {
     Room *r = &g->rooms[g->cur];
     if (g->target < 0) return;
-    g->dbg_verb = verb; g->dbg_pid = r->objs[g->target].pid; g->dbg_ran = 0; g->dbg_execs++;
+    g->dbg_verb = verb; g->dbg_pid = r->objs[g->target].pid; g->dbg_ran = 0; g->dbg_log[g->dbg_execs & 3][0] = g->tickno; g->dbg_log[g->dbg_execs & 3][1] = (unsigned)verb; g->dbg_log[g->dbg_execs & 3][2] = (unsigned)g->prev_joy; g->dbg_execs++;
     if (verb == 2 && g->ninv < 64) {                                                 /* take: the object goes to the rucksack */
         { int pid = r->objs[g->target].pid;                                          /* treasure: gold and XP from the take script ($ffdc/$ffa0) */
           for (int i = 0; i < g->ntake; i++) if (g->take_pid[i] == pid) {
@@ -790,5 +790,6 @@ int game_debug_text(const Game *g, char *buf, int n) {
         len += snprintf(buf + len, (size_t)(n - len), " | CODE(%d)", g->vm_len[i]);
         for (int k = 0; k < g->vm_len[i] && k < 20 && len < n - 4; k++) len += snprintf(buf + len, (size_t)(n - len), " %02x", g->vm_code[i][k]);
         break; }
+    for (int k = 0; k < g->dbg_execs && k < 4 && len < n - 30; k++) len += snprintf(buf + len, (size_t)(n - len), " | EX tick %u verb %u joy %02x", g->dbg_log[k][0], g->dbg_log[k][1], g->dbg_log[k][2]);
     return 1;
 }
