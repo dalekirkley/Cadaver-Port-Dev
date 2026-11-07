@@ -901,7 +901,7 @@ void game_render(const Game *g, uint32_t *fb) {
     }
     for (int i = 0; i < r->nwalls && n < 255; i++) {
         const Wall *w = &r->walls[i]; const Sprite *s = &g->spr[w->slot];
-        if (s->state == 1 && s->h > 1 && (wall_closed(g, w) || (w->idx < MAX_WALLIDX && g->walldoor[w->idx]))) items[n++] = (DrawItem){ w->wx + s->fx + w->wy + s->fy - 2, w->wx + s->fx - 1, w->wy + s->fy - 1, (w->z - r->basez) * 16, w->slot, 0, {0}, 0 };
+        if (s->state == 1 && s->h > 1 && (wall_closed(g, w) || (w->idx < MAX_WALLIDX && g->walldoor[w->idx]))) items[n++] = (DrawItem){ -999, w->wx + s->fx - 1, w->wy + s->fy - 1, (w->z - r->basez) * 16, w->slot, 0, {0}, 0, 0, -1 };   /* door slabs sit in the far walls: always behind the hero and objects */
     }
     items[n++] = (DrawItem){ g->hero.x + g->hero.y, g->hero.x, g->hero.y, g->hero.z, 8, 1, box_of(g, &g->hero), 1 };
     qsort(items, n, sizeof items[0], cmp_item);
