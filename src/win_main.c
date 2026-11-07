@@ -18,6 +18,7 @@ static BITMAPINFO bmi;
 static uint32_t fb[SCREEN_W * SCREEN_H];
 static uint32_t bgra[SCREEN_W * SCREEN_H];
 static int running = 1;
+static Game *g_game;                                                         /* for debug keys handled in the window procedure */
 static int use_d3d = 0;                                                      /* Direct3D 11 presenter; GDI is the fallback */
 static int crt_on = 0; static uint32_t *crt_buf; static int crt_w, crt_h;   /* F2 toggles the CRT filter */
 static int pending_level = 0;   /* F6..F10 = load data\\levelN.bin */
@@ -61,7 +62,8 @@ static LRESULT CALLBACK wndproc(HWND h, UINT m, WPARAM w, LPARAM l) {
     case WM_DESTROY: running = 0; PostQuitMessage(0); return 0;
     case WM_KEYDOWN:
         if (w == VK_ESCAPE) { running = 0; PostQuitMessage(0); }
-        if (w == VK_F2 && !(l & (1 << 30))) crt_on ^= 1;                    /* F2: CRT filter on/off */
+        if (w == VK_F2 && !(l & (1 << 30))) crt_on ^= 1;
+        if ((w == VK_PRIOR || w == VK_NEXT) && g_game) game_cycle_room(g_game, w == VK_NEXT ? 1 : -1);   /* debug: walk through the rooms */                    /* F2: CRT filter on/off */
         if (w >= VK_F6 && w <= VK_F10) pending_level = (int)(w - VK_F6) + 1;   /* debug level switch; F1 stays free for the map */
         return 0;
     case WM_SIZING: {                                           /* snap the window to the 320x200 shape while it is dragged */
@@ -99,7 +101,7 @@ static LRESULT CALLBACK wndproc(HWND h, UINT m, WPARAM w, LPARAM l) {
 int WINAPI WinMain(HINSTANCE hi, HINSTANCE hp, LPSTR cmd, int show) {
     (void)hp; (void)cmd;
     const char *path = (cmd && *cmd) ? cmd : "data\\level1.bin";
-    Game *g = game_load(path);
+    Game *g = game_load(path); g_game = g;
     if (!g) { MessageBoxA(NULL, "Could not load data\\level1.bin.\nRun tools\\export_level.py on your Cadaver disks first (see README).", "Cadaver", MB_ICONERROR); return 1; }
     WNDCLASSA wc = {0}; wc.lpfnWndProc = wndproc; wc.hInstance = hi; wc.hCursor = LoadCursor(NULL, IDC_ARROW); wc.lpszClassName = "CadaverNative";
     RegisterClassA(&wc);
@@ -120,7 +122,7 @@ int WINAPI WinMain(HINSTANCE hi, HINSTANCE hp, LPSTR cmd, int show) {
         { int rl = game_level_request(g); if (rl) pending_level = rl; }
         if (pending_level) {
             char p[64]; snprintf(p, sizeof p, "data\\level%d.bin", pending_level); pending_level = 0;
-            Game *ng = game_load(p); if (ng) { game_free(g); g = ng; next = t; }
+            Game *ng = game_load(p); if (ng) { game_free(g); g = ng; g_game = g; next = t; }
         }
         audio_pump(g);
         game_render(g, fb);

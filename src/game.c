@@ -935,3 +935,11 @@ int game_debug_text(const Game *g, char *buf, int n) {
 }
 
 int game_level_request(Game *g) { int l = g->want_level; g->want_level = 0; return l; }
+
+/* Debug: step to the next/previous valid room and stand in its middle (PageUp / PageDown in the window). */
+void game_cycle_room(Game *g, int dir) {
+    int n = g->cur;
+    for (int i = 0; i < 100; i++) { n = (n + dir + 100) % 100; if (g->rooms[n].valid) break; }
+    if (!g->rooms[n].valid) return;
+    g->cur = n; g->hero.x = g->rooms[n].sx * 4; g->hero.y = g->rooms[n].sy * 4; g->hero.z = 0; g->menu = 0; g->jump_t = 0; g->visited[n] = 1;
+}
