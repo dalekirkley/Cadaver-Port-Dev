@@ -55,6 +55,17 @@ static LRESULT CALLBACK wndproc(HWND h, UINT m, WPARAM w, LPARAM l) {
         if (w == VK_ESCAPE) { running = 0; PostQuitMessage(0); }
         if (w >= VK_F6 && w <= VK_F10) pending_level = (int)(w - VK_F6) + 1;   /* debug level switch; F1 stays free for the map */
         return 0;
+    case WM_SIZING: {                                           /* snap the window to the 320x200 shape while it is dragged */
+        RECT *rc = (RECT *)l, nc = {0, 0, 0, 0}; AdjustWindowRect(&nc, WS_OVERLAPPEDWINDOW, FALSE);
+        int bw = (nc.right - nc.left), bh = (nc.bottom - nc.top);               /* frame size around the client area */
+        int cw = (rc->right - rc->left) - bw, ch = (rc->bottom - rc->top) - bh;
+        if (cw < SCREEN_W) cw = SCREEN_W; if (ch < SCREEN_H) ch = SCREEN_H;
+        if (w == WMSZ_LEFT || w == WMSZ_RIGHT) ch = cw * SCREEN_H / SCREEN_W;      /* width drives height */
+        else if (w == WMSZ_TOP || w == WMSZ_BOTTOM) cw = ch * SCREEN_W / SCREEN_H; /* height drives width */
+        else { int hw2 = ch * SCREEN_W / SCREEN_H; if (hw2 > cw) cw = hw2; ch = cw * SCREEN_H / SCREEN_W; }   /* corner: take the larger */
+        if (w == WMSZ_LEFT || w == WMSZ_TOPLEFT || w == WMSZ_BOTTOMLEFT) rc->left = rc->right - (cw + bw); else rc->right = rc->left + cw + bw;
+        if (w == WMSZ_TOP || w == WMSZ_TOPLEFT || w == WMSZ_TOPRIGHT) rc->top = rc->bottom - (ch + bh); else rc->bottom = rc->top + ch + bh;
+        return TRUE; }
     case WM_ERASEBKGND: return 1;
     case WM_PAINT: {
         PAINTSTRUCT ps; HDC dc = BeginPaint(h, &ps); RECT rc; GetClientRect(h, &rc);
