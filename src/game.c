@@ -712,16 +712,17 @@ void game_tick(Game *g, int joy) {
     g->tickno++;
     if (g->hurt_cd > 0) g->hurt_cd--;
     for (int i = 0; i < r->nobj; i++) {                      /* water lurker (slot 116): ripples, surfaces, opens its mouth, sinks, then returns to the pool until the next timer. Frame order and timing are read off the emulator, not decoded */
-        Obj *c = &r->objs[i]; if (g->spr[c->slot].nfr < 10 || c->home == g->cur) continue;
+        Obj *c = &r->objs[i]; if (g->spr[c->slot].nfr < 10) continue;
         if (c->slot == 112 && g->spr[112].nfr >= 16) {          /* worm: 78-tick cycle read off the emulator: hop (frame 15, arc), crawl (frames 12/13 alternating), rest (frame 14); gone after 3 cycles */
             static const int arc[10] = { 8, 18, 33, 46, 54, 52, 42, 28, 12, 0 };
-            int t = (c->stage + 60) % 78; c->stage++;   /* a fresh worm starts in its rest phase */
-            if (c->stage >= 78 * 3) { Obj back = *c; back.stage = 0; back.lift = 0; back.anim = 8; back.atick = 8; Room *hr = &g->rooms[back.home];
+            int t = (c->stage + 60) % 78; c->stage = c->home == g->cur ? t - 59 : c->stage + 1;   /* a fresh worm starts in its rest phase */
+            if (c->home != g->cur && c->stage >= 78 * 3) { Obj back = *c; back.stage = 0; back.lift = 0; back.anim = 8; back.atick = 8; Room *hr = &g->rooms[back.home];
                 r->objs[i] = r->objs[--r->nobj]; if (hr->valid) hr->objs[hr->nobj++] = back; i--; continue; }
             if (t < 30) { c->anim = 15; c->lift = arc[(t + 1) / 3 > 9 ? 9 : (t + 1) / 3]; }
             else if (t < 60) { c->anim = ((t - 30) / 3) % 2 ? 13 : 12; c->lift = 0; }
             else { c->anim = 14; c->lift = 0; }
             continue; }
+        if (c->home == g->cur) continue;
         static const struct { int f, t; } seq[] = { {8, 8}, {9, 8}, {0, 6}, {3, 6}, {4, 16}, {3, 6}, {0, 6}, {9, 8}, {8, 8} };
         if (--c->atick > 0) continue;
         c->stage++;
