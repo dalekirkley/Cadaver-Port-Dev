@@ -27,5 +27,6 @@ int game_room(const Game *g);
 void game_warp(Game *g, int room, int x, int y, int z);
 int game_debug_text(const Game *g, char *buf, int n);
 void game_change_energy(Game *g, int delta);
+int game_level_request(Game *g);   /* returns and clears a requested level number (0 = none) */
 void game_hero(const Game *g, int *x, int *y, int *z);
 #endif

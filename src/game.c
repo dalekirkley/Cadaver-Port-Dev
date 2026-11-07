@@ -38,7 +38,7 @@ struct Game {
     Obj hero;                         /* hero.slot = 8 */
     int facing, anim_t, moving;
     uint8_t font[46 * 24], fontmap[32]; char **text; int ntext; int day; int energy; int jump_t, jump_z0;
-    int has_scroll; uint8_t scroll_tiles[18 * 32], scroll_map[0x30], font5[46 * 20]; int nexam, nuse, ntake; uint16_t take_pid[512]; int16_t take_gold[512], take_xp[512]; uint8_t counter[256]; int nhid; struct { int room; Obj o; } hid[128]; int hurt_cd; int dbg, dbg_verb, dbg_pid, dbg_ran, dbg_execs; unsigned dbg_log[4][3]; unsigned char dbg_tr[48]; int dbg_ntr; int nvm; uint16_t vm_pid[256]; uint8_t vm_len[256], vm_code[256][255]; uint16_t exam_pid[512], exam_text[512], use_pid[512], use_text[512];   /* examine scroll */
+    int has_scroll; uint8_t scroll_tiles[18 * 32], scroll_map[0x30], font5[46 * 20]; int nexam, nuse, ntake; uint16_t take_pid[512]; int16_t take_gold[512], take_xp[512]; uint8_t counter[256]; int nhid; struct { int room; Obj o; } hid[128]; int hurt_cd; int want_level; int spawn_pid; int dbg, dbg_verb, dbg_pid, dbg_ran, dbg_execs; unsigned dbg_log[4][3]; unsigned char dbg_tr[48]; int dbg_ntr; int nvm; uint16_t vm_pid[256]; uint8_t vm_len[256], vm_code[256][255]; uint16_t exam_pid[512], exam_text[512], use_pid[512], use_text[512];   /* examine scroll */
     int scroll_t; char scroll_str[256]; long score; int map_open, map_px, map_py, status_open; long gold, xp, level; uint8_t visited[100];
     int has_icons; uint8_t icons[20 * 112]; uint16_t slotpos[8][4]; uint8_t verbtab[16];
     int target, nverbs, verbs[8], menu, sel, prev_joy, msg, msg_t, ninv, inv[64];     /* verb menu state */
@@ -206,7 +206,7 @@ static int overlap(Box a, Box b) {
 }
 static int flat(const Game *g, const Obj *o) { const Sprite *s = &g->spr[o->slot]; return o->slot != 8 && !s->push && s->fz <= 2; }   /* floor decals: walk-over, drawn under everything */
 /* Walking pushes only light objects (type byte +$c bit 1, the TAKE bit); bit 0 alone = heavy furniture (altars, pillars) that only the MOVE verb could shift. */
-static int pushable(const Game *g, const Obj *o) { return o->slot != 8 && (g->spr[o->slot].push & 2) != 0; }
+static int pushable(const Game *g, const Obj *o) { return o->slot != 8 && ((g->spr[o->slot].push & 2) != 0 || (o->xflags & 0x100)); }   /* 0x100 = unlocked by the MOVE verb */
 
 /* Try to move o by (dx,dy); every overlapping object must itself be pushable and movable. */
 static int try_move(Game *g, Room *r, Obj *o, int dx, int dy, int depth) {
@@ -288,6 +288,12 @@ static void vm_op(Vm *m, int op) {
             Room *r = &g->rooms[g->hid[i].room]; Obj o = g->hid[i].o; o.flags &= ~0x80;
             r->objs[r->nobj++] = o; g->hid[i] = g->hid[--g->nhid]; break; }
         break; }
+    case 0x05: { int d = (int8_t)m->c[m->p]; m->p++; g->gold += d; if (g->gold < 0) g->gold = 0; play_sound(g, d < 0 ? 0x24 : 0x1a); break; }   /* add gold ($ffa0) */
+    case 0x33: { int n = m->c[m->p]; m->p++; if (n <= 9) g->want_level = n + 2; m->stop = 1; break; }              /* go to level n+2 ($10098) */
+    case 0x25: { int n = m->c[m->p], dx = m->c[m->p + 1], dy = m->c[m->p + 2], dz = m->c[m->p + 3]; m->p += 4;   /* create an object next to the target ($10546) */
+        Room *rr = &g->rooms[g->cur]; Obj no2; memset(&no2, 0, sizeof no2);
+        no2.slot = n; no2.x = m->self->x + dx; no2.y = m->self->y + dy; no2.z = m->self->z + dz; no2.pid = 1000 + g->spawn_pid++;
+        rr->objs[rr->nobj++] = no2; break; }
     case 0x1f: m->self->flags &= ~1; break;
     case 0x20: m->self->flags |= 1; break;
     case 0x21: m->self->flags ^= 1; break;
@@ -381,6 +387,7 @@ static void build_verbs(Game *g) {
 static void say(Game *g, int text_id) { g->msg = text_id; g->msg_t = 50; }
 
 static void exec_verb(Game *g, int verb) {
+    if (verb == 0xa && g->target >= 0) { g->rooms[g->cur].objs[g->target].xflags |= 0x100; return; }   /* MOVE: this object can now be pushed */
     Room *r = &g->rooms[g->cur];
     if (g->target < 0) return;
     g->dbg_verb = verb; g->dbg_pid = r->objs[g->target].pid; g->dbg_ran = 0; g->dbg_ntr = 0; g->dbg_log[g->dbg_execs & 3][0] = g->tickno; g->dbg_log[g->dbg_execs & 3][1] = (unsigned)verb; g->dbg_log[g->dbg_execs & 3][2] = (unsigned)g->prev_joy; g->dbg_execs++;
@@ -802,3 +809,5 @@ int game_debug_text(const Game *g, char *buf, int n) {
     for (int k = 0; k < g->dbg_execs && k < 4 && len < n - 30; k++) len += snprintf(buf + len, (size_t)(n - len), " | tick %u v%u", g->dbg_log[k][0], g->dbg_log[k][1]);
     return 1;
 }
+
+int game_level_request(Game *g) { int l = g->want_level; g->want_level = 0; return l; }

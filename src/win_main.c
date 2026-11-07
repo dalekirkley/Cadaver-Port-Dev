@@ -84,6 +84,7 @@ int WINAPI WinMain(HINSTANCE hi, HINSTANCE hp, LPSTR cmd, int show) {
         int steps = 0;
         while (t >= next && steps < 5) { game_tick(g, read_joy()); next += tick; steps++; }
         if (steps > 4) next = t;
+        { int rl = game_level_request(g); if (rl) pending_level = rl; }
         if (pending_level) {
             char p[64]; snprintf(p, sizeof p, "data\\level%d.bin", pending_level); pending_level = 0;
             Game *ng = game_load(p); if (ng) { game_free(g); g = ng; next = t; }
