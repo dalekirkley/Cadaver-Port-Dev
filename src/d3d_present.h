@@ -4,7 +4,7 @@
 #include <stdint.h>
 /* Direct3D 11 presenter: uploads the 320x200 framebuffer (R in the low byte) and draws it letterboxed with either sharp-bilinear
  * scaling (mode 0) or the CRT shader (mode 1). d3d_init returns 0 when Direct3D is unavailable; the caller then keeps using GDI. */
-int d3d_init(HWND hw, int srcw, int srch);
+int d3d_init(HWND hw, int srcw, int srch, int dish);   /* dish: height of the displayed picture for a width of srcw (320x240 shape) */
 void d3d_resize(int w, int h);
 void d3d_present(const uint32_t *fb, int mode);
 void d3d_shutdown(void);

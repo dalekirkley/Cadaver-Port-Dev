@@ -85,14 +85,14 @@ static LRESULT CALLBACK wndproc(HWND h, UINT m, WPARAM w, LPARAM l) {
     case WM_SYSKEYDOWN:
         if (w == VK_RETURN && !(l & (1 << 30))) { toggle_fullscreen(h); return 0; }
         break;
-    case WM_SIZING: {                                           /* snap the window to the 320x200 shape while it is dragged */
+    case WM_SIZING: {                                           /* snap the window to the 320x240 shape while it is dragged */
         RECT *rc = (RECT *)l, nc = {0, 0, 0, 0}; AdjustWindowRect(&nc, WS_OVERLAPPEDWINDOW, FALSE);
         int bw = (nc.right - nc.left), bh = (nc.bottom - nc.top);               /* frame size around the client area */
         int cw = (rc->right - rc->left) - bw, ch = (rc->bottom - rc->top) - bh;
-        if (cw < SCREEN_W) cw = SCREEN_W; if (ch < SCREEN_H) ch = SCREEN_H;
-        if (w == WMSZ_LEFT || w == WMSZ_RIGHT) ch = cw * SCREEN_H / SCREEN_W;      /* width drives height */
-        else if (w == WMSZ_TOP || w == WMSZ_BOTTOM) cw = ch * SCREEN_W / SCREEN_H; /* height drives width */
-        else { int hw2 = ch * SCREEN_W / SCREEN_H; if (hw2 > cw) cw = hw2; ch = cw * SCREEN_H / SCREEN_W; }   /* corner: take the larger */
+        if (cw < SCREEN_W) cw = SCREEN_W; if (ch < DISPLAY_H) ch = DISPLAY_H;
+        if (w == WMSZ_LEFT || w == WMSZ_RIGHT) ch = cw * DISPLAY_H / SCREEN_W;      /* width drives height */
+        else if (w == WMSZ_TOP || w == WMSZ_BOTTOM) cw = ch * SCREEN_W / DISPLAY_H; /* height drives width */
+        else { int hw2 = ch * SCREEN_W / DISPLAY_H; if (hw2 > cw) cw = hw2; ch = cw * DISPLAY_H / SCREEN_W; }   /* corner: take the larger */
         if (w == WMSZ_LEFT || w == WMSZ_TOPLEFT || w == WMSZ_BOTTOMLEFT) rc->left = rc->right - (cw + bw); else rc->right = rc->left + cw + bw;
         if (w == WMSZ_TOP || w == WMSZ_TOPLEFT || w == WMSZ_TOPRIGHT) rc->top = rc->bottom - (ch + bh); else rc->bottom = rc->top + ch + bh;
         return TRUE; }
@@ -101,8 +101,8 @@ static LRESULT CALLBACK wndproc(HWND h, UINT m, WPARAM w, LPARAM l) {
     case WM_PAINT: {
         PAINTSTRUCT ps; HDC dc = BeginPaint(h, &ps); RECT rc; GetClientRect(h, &rc);
         if (use_d3d) { EndPaint(h, &ps); return 0; }
-        { int cw = rc.right, ch = rc.bottom, dw = cw, dh = cw * SCREEN_H / SCREEN_W;      /* keep the 320x200 aspect: letterbox with black bars */
-          if (dh > ch) { dh = ch; dw = ch * SCREEN_W / SCREEN_H; }
+        { int cw = rc.right, ch = rc.bottom, dw = cw, dh = cw * DISPLAY_H / SCREEN_W;      /* keep the 320x240 aspect: letterbox with black bars */
+          if (dh > ch) { dh = ch; dw = ch * SCREEN_W / DISPLAY_H; }
           int ox = (cw - dw) / 2, oy = (ch - dh) / 2;
           if (ox > 0) { PatBlt(dc, 0, 0, ox, ch, BLACKNESS); PatBlt(dc, ox + dw, 0, cw - ox - dw, ch, BLACKNESS); }
           if (oy > 0) { PatBlt(dc, 0, 0, cw, oy, BLACKNESS); PatBlt(dc, 0, oy + dh, cw, ch - oy - dh, BLACKNESS); }
@@ -124,11 +124,11 @@ int WINAPI WinMain(HINSTANCE hi, HINSTANCE hp, LPSTR cmd, int show) {
     if (!g) { MessageBoxA(NULL, "Could not load data\\level1.bin.\nRun tools\\export_level.py on your Cadaver disks first (see README).", "Cadaver", MB_ICONERROR); return 1; }
     WNDCLASSA wc = {0}; wc.lpfnWndProc = wndproc; wc.hInstance = hi; wc.hCursor = LoadCursor(NULL, IDC_ARROW); wc.lpszClassName = "CadaverNative";
     RegisterClassA(&wc);
-    RECT r = {0, 0, SCREEN_W * SCALE, SCREEN_H * SCALE}; AdjustWindowRect(&r, WS_OVERLAPPEDWINDOW, FALSE);
+    RECT r = {0, 0, SCREEN_W * SCALE, DISPLAY_H * SCALE}; AdjustWindowRect(&r, WS_OVERLAPPEDWINDOW, FALSE);
     HWND hw = CreateWindowA("CadaverNative", "Cadaver (native)", WS_OVERLAPPEDWINDOW | WS_VISIBLE, CW_USEDEFAULT, CW_USEDEFAULT, r.right - r.left, r.bottom - r.top, NULL, NULL, hi, NULL);
     bmi.bmiHeader.biSize = sizeof bmi.bmiHeader; bmi.bmiHeader.biWidth = SCREEN_W; bmi.bmiHeader.biHeight = -SCREEN_H;
     bmi.bmiHeader.biPlanes = 1; bmi.bmiHeader.biBitCount = 32; bmi.bmiHeader.biCompression = BI_RGB;
-    if (!getenv("CADAVER_GDI")) use_d3d = d3d_init(hw, SCREEN_W, SCREEN_H);          /* set CADAVER_GDI=1 to force the old GDI path */
+    if (!getenv("CADAVER_GDI")) use_d3d = d3d_init(hw, SCREEN_W, SCREEN_H, DISPLAY_H);          /* set CADAVER_GDI=1 to force the old GDI path */
     timeBeginPeriod(1); audio_init();
     LARGE_INTEGER fq, t0; QueryPerformanceFrequency(&fq); QueryPerformanceCounter(&t0);
     double next = 0, tick = 1.0 / TICK_HZ;

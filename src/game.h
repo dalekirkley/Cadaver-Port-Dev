@@ -5,6 +5,7 @@
 
 #define SCREEN_W 320
 #define SCREEN_H 200
+#define DISPLAY_H 240          /* the picture is shown 4:3 (320x240 shape): Amiga pixels were taller than wide */
 #define TICK_HZ 25              /* original logic rate */
 
 /* joystick bits as in the original ($8c3): */

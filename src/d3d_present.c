@@ -10,7 +10,7 @@
 static ID3D11Device *dev; static ID3D11DeviceContext *ctx; static IDXGISwapChain *sc; static ID3D11RenderTargetView *rtv;
 static ID3D11Texture2D *tex; static ID3D11ShaderResourceView *srv; static ID3D11SamplerState *smp;
 static ID3D11VertexShader *vsh; static ID3D11PixelShader *ps_plain, *ps_crt; static ID3D11Buffer *cbuf;
-static int SW, SH, BW, BH;
+static int SW, SH, DH, BW, BH;
 typedef struct { float srcW, srcH, dstW, dstH, scale, pad0, pad1, pad2; } CB;
 
 static const char *HLSL =
@@ -65,8 +65,8 @@ void d3d_shutdown(void) {
 #undef REL
 }
 
-int d3d_init(HWND hw, int srcw, int srch) {
-    SW = srcw; SH = srch;
+int d3d_init(HWND hw, int srcw, int srch, int dish) {
+    SW = srcw; SH = srch; DH = dish;
     RECT rc; GetClientRect(hw, &rc); BW = rc.right > 0 ? rc.right : 1; BH = rc.bottom > 0 ? rc.bottom : 1;
     DXGI_SWAP_CHAIN_DESC sd; memset(&sd, 0, sizeof sd);
     sd.BufferCount = 2; sd.BufferDesc.Width = BW; sd.BufferDesc.Height = BH; sd.BufferDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
@@ -117,7 +117,7 @@ void d3d_present(const uint32_t *fb, int mode) {
         for (int y = 0; y < SH; y++) memcpy((char *)ms.pData + (size_t)y * ms.RowPitch, fb + (size_t)y * SW, (size_t)SW * 4);
         ID3D11DeviceContext_Unmap(ctx, (ID3D11Resource *)tex, 0);
     }
-    int vw = BW, vh = BW * SH / SW; if (vh > BH) { vh = BH; vw = BH * SW / SH; }                 /* letterbox to the 320x200 shape */
+    int vw = BW, vh = BW * DH / SW; if (vh > BH) { vh = BH; vw = BH * SW / DH; }                 /* letterbox to the 320x240 shape */
     int vx = (BW - vw) / 2, vy = (BH - vh) / 2;
     CB cb = { (float)SW, (float)SH, (float)vw, (float)vh, (float)vh / (float)SH, 0, 0, 0 };
     ID3D11DeviceContext_UpdateSubresource(ctx, (ID3D11Resource *)cbuf, 0, NULL, &cb, 0, 0);
