@@ -209,9 +209,9 @@ void game_hero(const Game *g, int *x, int *y, int *z) { *x = g->hero.x; *y = g->
 
 /* ---------------------------------------------------------------- sound */
 /* Original Paula clock: 3546895 / period = sample rate; volume is Paula's 0..64. */
-static int play_voice(Game *g, int id, int period, double vol, double seconds) {
+static int play_voice(Game *g, int id, int period, double vol, double seconds, int chan) {
     if (id < 0 || id >= 74 || (id < 65 && !g->sfx[id].len)) return -1;
-    int v = 0; for (int i = 0; i < 4; i++) if (!g->voice[i].step) { v = i; break; }
+    int v = chan & 3;                                                    /* a sound's script i always drives Paula channel i; a newer sound takes the channel over */
     g->voice[v].sfx = id; g->voice[v].pos = 0; g->voice[v].step = 3546895.0 / period; g->voice[v].vol = vol; g->voice[v].left = seconds; g->voice[v].total = seconds; return v;
 }
 
@@ -226,8 +226,7 @@ static void play_sound(Game *g, int snd) {
     if (snd < 0 || snd >= 69) return;
     for (int i = 0; i < 4; i++) {
         int n = SND_IDX[snd][i][1]; if (!n) continue;
-        int k = -1; for (int q = 0; q < 8; q++) if (!g->sq[q].ev) { k = q; break; }
-        if (k < 0) k = 0;
+        int k = i; if (g->sq[k].mv >= 0 && g->sq[k].mv != k) g->voice[g->sq[k].mv].step = 0;
         g->sq[k].ev = &SND_EV[SND_IDX[snd][i][0]]; g->sq[k].n = n; g->sq[k].i = 0; g->sq[k].t = 0; g->sq[k].mv = -1; g->sq[k].snd = snd; g->sq[k].el = 0;
     }
 }
@@ -245,7 +244,7 @@ void game_audio_mix(Game *g, int16_t *out, int n, int rate) {
             if (sq->i >= sq->n) { sq->ev = NULL; continue; }
             const SndEv *e = &sq->ev[sq->i]; int last = sq->i == sq->n - 1;
             if (sq->mv >= 0) g->voice[sq->mv].step = 0;
-            if (e->sample >= 0) sq->mv = play_voice(g, e->sample, e->period, sq->snd == 0 ? e->vol * (1.0 + FOOTSTEP_VARIANCE * audio_rand(g)) : (double)e->vol, (last && e->sample < 65) ? (sq->snd == 0 ? 0.1 : 0.6) : e->ticks * SND_TICK_SEC); else sq->mv = -1;
+            if (e->sample >= 0) sq->mv = play_voice(g, e->sample, e->period, sq->snd == 0 ? e->vol * (1.0 + FOOTSTEP_VARIANCE * audio_rand(g)) : (double)e->vol, (last && e->sample < 65) ? (sq->snd == 0 ? 0.1 : 0.6) : e->ticks * SND_TICK_SEC, q); else sq->mv = -1;
             if (sq->mv >= 0) g->voice[sq->mv].snd = sq->snd + 1;
             sq->t += e->ticks * SND_TICK_SEC; sq->i++; sq->el += e->ticks * SND_TICK_SEC; if (sq->el > SND_MAX_SEC) sq->i = sq->n;
         }
