@@ -47,7 +47,7 @@ struct Game {
     Obj hero;                         /* hero.slot = 8 */
     int facing, anim_t, moving;
     uint8_t font[46 * 24], fontmap[32]; char **text; int ntext; int day; int energy; int jump_t, jump_z0;
-    int has_scroll, old_data; uint8_t spl_ok[1024], spl_no[1024], spl_pow[1024], spl_fl[1024], spl_chg[1024]; uint8_t cons_ok[1024], cons_eff[1024], cons_amt[1024], cons_left[1024], cons_fl[1024]; int flash_t, tmr_t; uint8_t tmr[64]; unsigned aud_seed; int poison, poison_t, prot, prot_amt, atk_mask; uint8_t cre_hp[1024], cre_imm[1024], cre_fl6[1024], cre_ok[1024], spawn_snd[256], mvstate[1024], kill_ok[1024], kill_rew[1024], kill_fl[1024];   /* 0 = unknown, else movement state + 1 (3 = chase the hero) */  uint8_t scroll_tiles[18 * 32], scroll_map[0x30], font5[46 * 20]; int nexam, nuse, ntake; uint16_t take_pid[512]; int16_t take_gold[512], take_xp[512]; uint8_t counter[256], gflag[256], on_pl[1024]; uint32_t gbits; int nhid; struct { int room; Obj o; } hid[1024]; int hurt_cd, touch_snd, touch_seen; unsigned rng_seed, rng_last; int ent_tick; uint8_t rs_done[100][16]; uint8_t *aprog[256]; int aprog_len[256], asec[256][4], asec_n[256]; struct { uint8_t has, mode, frame, rev, pc, cnt, rel; } plan[1024]; int want_level; int pull_pid, pull_room; int spawn_pid; int rs_period[100], rs_nb[100]; uint8_t *rs_blk[100][16]; int tm_room, tm_left; uint8_t mv_prog[1024][96]; uint8_t mv_len[1024], mv_step[1024][3], mv_pat[1024]; int lvl1; int nch; uint16_t ch_pid[64], ch_cont[64], ch_key[64]; uint8_t ch_flags[64], ch_trap[64]; int dbg, dbg_verb, dbg_pid, dbg_ran, dbg_execs; unsigned dbg_log[4][3]; unsigned char dbg_tr[48]; int dbg_ntr; int nvm; uint16_t vm_pid[256]; uint8_t vm_len[256], vm_code[256][255]; uint16_t exam_pid[512], exam_text[512], use_pid[512], use_text[512];   /* examine scroll */
+    int has_scroll, old_data; uint8_t spl_ok[1024], spl_no[1024], spl_pow[1024], spl_fl[1024], spl_chg[1024]; uint8_t cons_ok[1024], cons_eff[1024], cons_amt[1024], cons_left[1024], cons_fl[1024]; int flash_t, tmr_t; uint8_t tmr[64]; unsigned aud_seed; int poison, poison_t, prot, prot_amt, atk_mask; uint8_t cre_hp[1024], cre_imm[1024], cre_fl6[1024], cre_ok[1024], spawn_snd[256], mvstate[1024], kill_ok[1024], kill_rew[1024], kill_fl[1024];   /* 0 = unknown, else movement state + 1 (3 = chase the hero) */  uint8_t scroll_tiles[18 * 32], scroll_map[0x30], font5[46 * 20]; int nexam, nuse, ntake; uint16_t take_pid[512]; int16_t take_gold[512], take_xp[512]; uint8_t counter[256], gflag[256], on_pl[1024]; int dly_arg, dly_t; uint32_t gbits; int nhid; struct { int room; Obj o; } hid[1024]; int hurt_cd, touch_snd, touch_seen; unsigned rng_seed, rng_last; int ent_tick; uint8_t rs_done[100][16]; uint8_t *aprog[256]; int aprog_len[256], asec[256][4], asec_n[256]; struct { uint8_t has, mode, frame, rev, pc, cnt, rel; } plan[1024]; int want_level; int pull_pid, pull_room; int spawn_pid; int rs_period[100], rs_nb[100]; uint8_t *rs_blk[100][16]; int tm_room, tm_left; uint8_t mv_prog[1024][96]; uint8_t mv_len[1024], mv_step[1024][3], mv_pat[1024]; int lvl1; int nch; uint16_t ch_pid[64], ch_cont[64], ch_key[64]; uint8_t ch_flags[64], ch_trap[64]; int dbg, dbg_verb, dbg_pid, dbg_ran, dbg_execs; unsigned dbg_log[4][3]; unsigned char dbg_tr[48]; int dbg_ntr; int nvm; uint16_t vm_pid[256]; uint8_t vm_len[256], vm_code[256][255]; uint16_t exam_pid[512], exam_text[512], use_pid[512], use_text[512];   /* examine scroll */
     int scroll_t; char scroll_str[256]; long score; int map_open, map_px, map_py, status_open; long gold, xp, level; uint8_t visited[100];
     int has_icons; uint8_t icons[20 * 112]; uint16_t slotpos[8][4]; uint8_t verbtab[16];
     int target, nverbs, verbs[8], menu, sel, prev_joy, msg, msg_t, ninv, inv[64], inv_slot[64], inv_mode, inv_sel, inv_hold;     /* verb menu state */
@@ -379,6 +379,7 @@ static void creature_hit_sound(Game *g, const Obj *q) {
 typedef struct { Game *g; Obj *self; const uint8_t *c; int len, p, cond, stop; } Vm;
 static int vm_word(Vm *m) { int v = (m->c[m->p] << 8) | m->c[m->p + 1]; m->p += 2; return v; }
 static void vm_op(Vm *m, int op);
+static void room_event(Game *g, int ev, int arg);
 static void vm_block(Vm *m) {                                         /* run ops until the 16 that closes the block */
     while (!m->stop && m->p < m->len) { int op = m->c[m->p++]; if (op == 0x16) return; vm_op(m, op); }
     m->stop = 1;
@@ -494,14 +495,19 @@ static void vm_op(Vm *m, int op) {
     case 0x2c: { vm_word(m); m->p += 4; break; }                                                                       /* queue a visual effect at an object ($10424): no gameplay effect */
     case 0x51: { int n = m->c[m->p++]; g->rng_last = g->counter[n]; break; }                                         /* load the condition register from counter n ($107e8), tested by op 50 */
     case 0x5a: { int a = m->c[m->p], b = m->c[m->p + 1], c = m->c[m->p + 2]; m->p += 3; g->poison = a; if (a) g->poison_t = 0; g->tmr[0] = (uint8_t)b; g->tmr[1] = (uint8_t)c; break; }   /* poison strength and the two timers ($10ace) */
-    case 0x2a: m->p += 2; break;                                                                                       /* two hero state bytes ($1081e): meaning not decoded */
+    case 0x2a: { int a = m->c[m->p], b = m->c[m->p + 1]; m->p += 2; g->dly_arg = a; g->dly_t = b; break; }                                                                                       /* two hero state bytes ($1081e): meaning not decoded */
     case 0x5b: { int n = m->c[m->p++]; m->cond = (m->self && m->self->slot == n) ? m->cond + 1 : 0; break; }        /* condition: the event object's type is n ($10af0) */
+    case 0x56: { int w = vm_word(m); g->xp += w; g->gold += w >> 2; play_sound(g, 3); break; }                       /* experience word (and a quarter as gold) ($ffd2) */
+    case 0x57: stop_sound(g, m->c[m->p++]); break;                                                                     /* cut a sound ($10a4c) */
+    case 0x5d: vm_word(m); break;                                                                                      /* set bit 2 of a part byte ($10b14): not modelled */
+    case 0x44: { Obj *q = find_obj(g, vm_word(m)); if (q) q->xflags |= 0x40; break; }                                 /* the object loses its verbs ($10a12) */
+    case 0x36: { Obj *q = find_obj(g, vm_word(m)); if (q) q->xflags |= 4; break; }                                    /* the object can no longer be taken or pushed ($1011a) */
     case 0x55: { int w = (int16_t)vm_word(m); g->gold += w; if (g->gold < 0) g->gold = 0; play_sound(g, w < 0 ? 0x24 : 0x1a); break; }   /* add a signed word to the gold ($ff94) */
     case 0x59: vm_word(m); break;                                                                                      /* clear bit 0 of a part byte of an object ($1004e): not modelled */
     case 0x52: m->p++; break;                                                                                          /* move all objects of a kind ($10a9c): not modelled */
     case 0x42: m->p += 3; break;                                                                                       /* queue a behaviour request for an object ($109de): not modelled */
     case 0x07: m->p += 2; break;                                                                                       /* deferred event for an id ($fff6): not modelled */
-    case 0x09: m->p++; break;                                                                                          /* post event $4013 with an argument to the hero ($107f8) */
+    case 0x09: { int n = m->c[m->p++]; room_event(m->g, 0x13, n); break; }                                                                                          /* post event $4013 with an argument to the hero ($107f8) */
     case 0x40: { int d0 = vm_word(m); if (d0 & 0x8000) m->p += 2; else m->p += 3; m->cond = 0; break; }              /* compare a game variable with a value ($10760): variables not mapped, treated as false */
     case 0x18: { Obj *q = find_obj(g, vm_word(m)); if (q) q->flags ^= 1; break; }                                    /* toggle placement flag bit 0 ($10318) */
     case 0x19: { Obj *q = find_obj(g, vm_word(m)); if (q) q->flags ^= 2; break; }                                    /* toggle placement flag bit 1 ($10324) */
@@ -511,6 +517,14 @@ static void vm_op(Vm *m, int op) {
         m->cond = in ? m->cond + 1 : 0; break; }
     default: m->stop = 1; break;                                      /* not decoded yet */
     }
+}
+/* Room event blocks with an argument (events 0x13 script-posted, 0x14 delayed, 0x18 spell cast): the block's byte 2 must equal the argument, code follows ($fca8, $fbce). */
+static void room_event(Game *g, int ev, int arg) {
+    static int depth; if (depth > 3) return; depth++;
+    int room = g->cur;
+    for (int b = 0; b < g->rs_nb[room]; b++) { const uint8_t *c = g->rs_blk[room][b]; if ((c[1] & 0x7f) != ev || c[2] != (arg & 255)) continue;
+        Vm m = { g, &g->hero, c, c[0], 3, 0, 0 }; vm_block(&m); if (g->cur != room) break; }
+    depth--;
 }
 static void run_script(Game *g, Obj *self, const uint8_t *c, int len) {
     Vm m = { g, self, c, len, 0, 0, 0 };
@@ -610,10 +624,10 @@ static void cast_spell(Game *g, int target) {
         if (target < 0) { say(g, 41); return; }                                         /* "you must cast this spell on a specific object" */
         const Sprite *ts = &g->spr[r->objs[target].slot]; int done = 0;
         if (no == 15 && ts->b16 == 8) { for (int i = 0; i < g->nch; i++) if (g->ch_pid[i] == r->objs[target].pid && g->ch_trap[i]) { g->ch_trap[i] = 0; say(g, 52); done = 1; } }
-        play_sound(g, 6);
+        play_sound(g, 6); room_event(g, 0x18, no);                                      /* every cast posts room event 0x18 with the spell number ($ed66) */
         if (!done) { say(g, 47); return; }                                              /* "you wasted that spell" */
     } else {
-        play_sound(g, 6);
+        play_sound(g, 6); room_event(g, 0x18, no);
         if (no == 1 || no == 5) {                                                       /* area attack: every creature in the room that is not invulnerable loses the spell's power in health (routines $968e4 / $96958) */
             start_flash(g);
             for (int i = 0; i < r->nobj; i++) { Obj *q = &r->objs[i]; int cp = q->pid; if (cp < 0 || cp >= 1024 || !g->cre_ok[cp] || q->dying > 0 || (g->cre_fl6[cp] & 1)) continue;
@@ -1008,6 +1022,7 @@ void game_tick(Game *g, int joy) {
     if (g->flash_t > 0) g->flash_t--;
     if (++g->tmr_t >= 165) { g->tmr_t = 0; for (int i = 0; i < 64; i++) if (g->tmr[i] && --g->tmr[i] == 0) {                  /* expiry handlers of the level code ($96b80 table) */
         if (i >= 2 && i <= 5) { g->prot &= ~(1 << (i - 2)); say(g, 26); } else if (i == 6) { g->prot = 0; say(g, 26); } else if (i == 0) { if (g->poison) { g->poison = 0; say(g, 45); } } else if (i >= 0x20 && i <= 0x28) say(g, 26); } }   /* timers count down once per 330 video frames; expiry shows "THE EFFECT WEARS OFF" */
+    if (g->dly_t > 0 && --g->dly_t == 0) { room_event(g, 0x14, g->dly_arg); r = &g->rooms[g->cur]; }       /* delayed room event set by op 2a ($8ab0) */
     if (g->poison && ++g->poison_t >= 165) { g->poison_t = 0; change_energy(g, -g->poison); }      /* poison costs its strength every 330 video frames (measured) */
     for (int i = 0; i < r->nobj; i++) { Obj *d = &r->objs[i]; if (d->dying <= 0) continue;
         if (g->spr[d->slot].nfr == 8 && g->spr[d->slot].c == 0x44) d->anim = (16 - d->dying) / 2 > 7 ? 7 : (16 - d->dying) / 2;
