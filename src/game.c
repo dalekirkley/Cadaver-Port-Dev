@@ -426,6 +426,9 @@ static void vm_op(Vm *m, int op) {
         }
         break; }
     case 0x00: case 0x08: { int id = vm_word(m); Obj *q = id >= 0x8000 ? m->self : find_obj(g, id); if (q && q != &g->hero) q->life = -1; break; }   /* 00: retire an object into the original's removed-objects list ($fd86, max 20; un-holds it); 08: hide it unless already hidden ($10004). Both: gone from the room */
+    case 0x03: { int id = vm_word(m); Obj *q = id >= 0x8000 ? m->self : find_obj(g, id);                          /* 03: restart a finished animation program ($fecc): state $fe -> 0 and the program moves past its f9 step */
+        if (q && q->aon && q->amode == 0xfe) { q->amode = 0; q->apc++; }
+        break; }
     case 0x02: if (m->self && m->self != &g->hero) m->self->life = -1; break;                                   /* 02: the same for the event's own object ($febe) */
     case 0x4f: { int lo = m->c[m->p], hi = m->c[m->p + 1]; m->p += 2;                                           /* random number lo..hi stored for op 50 ($10a7c, generator $1109c: seed word $46e) */
         unsigned sd = g->rng_seed ? g->rng_seed : (0x1d2bu ^ ((unsigned)g->tickno * 7919u)); unsigned d0 = (((sd << 8) & 0xff00u) | 0x0au); d0 = (d0 - sd) & 0xffffu; d0 = (d0 * 4 + sd + 1) & 0xffffu; if (!d0) d0 = 1; g->rng_seed = d0;
