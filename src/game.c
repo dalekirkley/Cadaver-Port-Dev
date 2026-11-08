@@ -427,9 +427,14 @@ static void vm_op(Vm *m, int op) {
             for (int i = 0; i < q->nobj; i++) if (q->objs[i].pid == id) { o2 = q->objs[i]; q->objs[i] = q->objs[--q->nobj]; got = 1; break; } }
         if (got && rm < 100 && g->rooms[rm].valid && g->rooms[rm].nobj < 4000) { o2.x = x; o2.y = y; o2.z = z; o2.flags &= ~0x90; g->rooms[rm].objs[g->rooms[rm].nobj++] = o2; }
         break; }
+    case 0x49: { int a = vm_word(m), b = vm_word(m); Obj *src = a >= 0x8000 ? m->self : find_obj(g, a);                /* move object b to the position of object a, in the current room ($1063a): loot drops, appearing items */
+        if (src && b < 0x8000) { uint8_t t[6] = { (uint8_t)(b >> 8), (uint8_t)b, (uint8_t)g->cur, (uint8_t)src->x, (uint8_t)src->y, (uint8_t)src->z }; Vm m2 = { g, m->self, t, 6, 0, 0, 0 }; vm_op(&m2, 0x29); }
+        break; }
+    case 0x14: { Obj *q = find_obj(g, vm_word(m)); if (q) q->flags |= 2; break; }                                     /* set placement flag bit 1 ($10300) */
+    case 0x37: { Obj *q = find_obj(g, vm_word(m)); if (q) q->xflags &= ~4; break; }                                  /* clear bit 2 of the object's second flag byte: it may be taken or pushed again ($10128) */
     case 0x26: { int n = m->c[m->p], v = m->c[m->p + 1]; m->p += 2; g->counter[n] = (uint8_t)v; break; }              /* set counter n ($1078c) */
     case 0x30: m->cond = m->cond == 0; vm_op(m, 0x0e); break;                                              /* block runs when the condition FAILED ($10222) */
-    case 0x31: { int i = m->c[m->p], v = m->c[m->p + 1]; m->p += 2; g->gflag[i] = (uint8_t)v; break; }              /* global flag byte ($108d8) */
+    case 0x31: { int i = m->c[m->p], v = m->c[m->p + 1]; m->p += 2; g->gflag[i] = (uint8_t)v; if (i < 64) g->tmr[i] = (uint8_t)v; break; }              /* global flag byte ($108d8) */
     case 0x4c: { int n = m->c[m->p++]; m->cond = (g->prot >> (n & 7) & 1) ? m->cond + 1 : 0; break; }            /* global bit n set ($108cc) */
     case 0x2f: { int id = vm_word(m); Obj *q = id >= 0x8000 ? m->self : find_obj(g, id); m->cond = q ? m->cond + 1 : 0; break; }   /* object exists ($108bc) */
     case 0x2b: { int id = vm_word(m); int rm = m->c[m->p++]; if (rm == 0xfe) rm = g->cur; int in = 0;                /* object is in room rm ($103a8) */
@@ -975,7 +980,8 @@ void game_tick(Game *g, int joy) {
     g->tickno++;
     if (g->hurt_cd > 0) g->hurt_cd--;
     if (g->flash_t > 0) g->flash_t--;
-    if (++g->tmr_t >= 165) { g->tmr_t = 0; for (int i = 0; i < 64; i++) if (g->tmr[i] && --g->tmr[i] == 0) say(g, 26); }   /* timers count down once per 330 video frames; expiry shows "THE EFFECT WEARS OFF" */
+    if (++g->tmr_t >= 165) { g->tmr_t = 0; for (int i = 0; i < 64; i++) if (g->tmr[i] && --g->tmr[i] == 0) {                  /* expiry handlers of the level code ($96b80 table) */
+        if (i >= 2 && i <= 5) { g->prot &= ~(1 << (i - 2)); say(g, 26); } else if (i == 6) { g->prot = 0; say(g, 26); } else if (i == 0) { if (g->poison) { g->poison = 0; say(g, 45); } } else if (i >= 0x20 && i <= 0x28) say(g, 26); } }   /* timers count down once per 330 video frames; expiry shows "THE EFFECT WEARS OFF" */
     if (g->poison && ++g->poison_t >= 165) { g->poison_t = 0; change_energy(g, -g->poison); }      /* poison costs its strength every 330 video frames (measured) */
     for (int i = 0; i < r->nobj; i++) { Obj *d = &r->objs[i]; if (d->dying <= 0) continue;
         if (g->spr[d->slot].nfr == 8 && g->spr[d->slot].c == 0x44) d->anim = (16 - d->dying) / 2 > 7 ? 7 : (16 - d->dying) / 2;
