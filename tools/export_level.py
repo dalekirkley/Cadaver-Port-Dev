@@ -358,4 +358,17 @@ for pid in range(1024):
     ch.append((pid,pr[q],pr[q+5],pr[q+6]))
 P('B',1);P('H',len(ch))
 for t in ch:P('HBBB',*t)
+# consumables (optional, after the creature health): objects whose type class byte +0x16 is 2 are drunk/eaten with verb 9 ($9f92): part byte 0 = effect number
+# (4 poison, 6/8/10/12 protection spell types 0..3, 7 message only), +1 = amount, +2 = doses, +3 = flags (bit 2: the dose hurts instead, bit 1: keep state).
+cs=[]
+for pid in range(1024):
+    pr=L.g6.rec(pid)
+    if len(pr)<16:continue
+    e=L.g2.rec(u16(pr,6))
+    if not e or len(e)<0x30 or e[0x16]!=2:continue
+    q=pr[0xc]
+    if q==0 or q+4>len(pr):continue
+    cs.append((pid,pr[q],pr[q+1],pr[q+2],pr[q+3]))
+P('B',1);P('H',len(cs))
+for t in cs:P('HBBBB',*t)
 open(out,'wb').write(o);print(len(o),'bytes,',len(exam),'examine texts')

@@ -47,7 +47,7 @@ struct Game {
     Obj hero;                         /* hero.slot = 8 */
     int facing, anim_t, moving;
     uint8_t font[46 * 24], fontmap[32]; char **text; int ntext; int day; int energy; int jump_t, jump_z0;
-    int has_scroll, old_data; uint8_t cre_hp[1024], cre_imm[1024], cre_fl6[1024], cre_ok[1024], spawn_snd[256], mvstate[1024], kill_ok[1024], kill_rew[1024], kill_fl[1024];   /* 0 = unknown, else movement state + 1 (3 = chase the hero) */  uint8_t scroll_tiles[18 * 32], scroll_map[0x30], font5[46 * 20]; int nexam, nuse, ntake; uint16_t take_pid[512]; int16_t take_gold[512], take_xp[512]; uint8_t counter[256], gflag[256]; uint32_t gbits; int nhid; struct { int room; Obj o; } hid[1024]; int hurt_cd, touch_snd, touch_seen; unsigned rng_seed, rng_last; int ent_tick; uint8_t rs_done[100][16]; uint8_t *aprog[256]; int aprog_len[256], asec[256][4], asec_n[256]; struct { uint8_t has, mode, frame, rev, pc, cnt, rel; } plan[1024]; int want_level; int pull_pid, pull_room; int spawn_pid; int rs_period[100], rs_nb[100]; uint8_t *rs_blk[100][16]; int tm_room, tm_left; uint8_t mv_prog[1024][96]; uint8_t mv_len[1024], mv_step[1024][3], mv_pat[1024]; int lvl1; int nch; uint16_t ch_pid[64], ch_cont[64], ch_key[64]; uint8_t ch_flags[64], ch_trap[64]; int dbg, dbg_verb, dbg_pid, dbg_ran, dbg_execs; unsigned dbg_log[4][3]; unsigned char dbg_tr[48]; int dbg_ntr; int nvm; uint16_t vm_pid[256]; uint8_t vm_len[256], vm_code[256][255]; uint16_t exam_pid[512], exam_text[512], use_pid[512], use_text[512];   /* examine scroll */
+    int has_scroll, old_data; uint8_t cons_ok[1024], cons_eff[1024], cons_amt[1024], cons_left[1024], cons_fl[1024]; int poison, poison_t, prot, prot_amt, atk_mask; uint8_t cre_hp[1024], cre_imm[1024], cre_fl6[1024], cre_ok[1024], spawn_snd[256], mvstate[1024], kill_ok[1024], kill_rew[1024], kill_fl[1024];   /* 0 = unknown, else movement state + 1 (3 = chase the hero) */  uint8_t scroll_tiles[18 * 32], scroll_map[0x30], font5[46 * 20]; int nexam, nuse, ntake; uint16_t take_pid[512]; int16_t take_gold[512], take_xp[512]; uint8_t counter[256], gflag[256]; uint32_t gbits; int nhid; struct { int room; Obj o; } hid[1024]; int hurt_cd, touch_snd, touch_seen; unsigned rng_seed, rng_last; int ent_tick; uint8_t rs_done[100][16]; uint8_t *aprog[256]; int aprog_len[256], asec[256][4], asec_n[256]; struct { uint8_t has, mode, frame, rev, pc, cnt, rel; } plan[1024]; int want_level; int pull_pid, pull_room; int spawn_pid; int rs_period[100], rs_nb[100]; uint8_t *rs_blk[100][16]; int tm_room, tm_left; uint8_t mv_prog[1024][96]; uint8_t mv_len[1024], mv_step[1024][3], mv_pat[1024]; int lvl1; int nch; uint16_t ch_pid[64], ch_cont[64], ch_key[64]; uint8_t ch_flags[64], ch_trap[64]; int dbg, dbg_verb, dbg_pid, dbg_ran, dbg_execs; unsigned dbg_log[4][3]; unsigned char dbg_tr[48]; int dbg_ntr; int nvm; uint16_t vm_pid[256]; uint8_t vm_len[256], vm_code[256][255]; uint16_t exam_pid[512], exam_text[512], use_pid[512], use_text[512];   /* examine scroll */
     int scroll_t; char scroll_str[256]; long score; int map_open, map_px, map_py, status_open; long gold, xp, level; uint8_t visited[100];
     int has_icons; uint8_t icons[20 * 112]; uint16_t slotpos[8][4]; uint8_t verbtab[16];
     int target, nverbs, verbs[8], menu, sel, prev_joy, msg, msg_t, ninv, inv[64], inv_slot[64], inv_mode, inv_sel, inv_hold;     /* verb menu state */
@@ -171,6 +171,8 @@ Game *game_load(const char *path) {
             for (int i = 0; i < ns; i++) { int sl = rd8(f), sn = rd8(f); if (sl >= 0 && sl < 256) g->spawn_snd[sl] = (uint8_t)(sn + 1); } }
         if (rd8(f) == 1) { int nc = rd16(f); if (nc < 0 || nc > 1024) nc = 0;                       /* creature health (optional): part bytes +0, +5, +6 */
             for (int i = 0; i < nc; i++) { int pid = rd16(f), hp = rd8(f), im = rd8(f), f6 = rd8(f); if (pid >= 0 && pid < 1024) { g->cre_ok[pid] = 1; g->cre_hp[pid] = (uint8_t)hp; g->cre_imm[pid] = (uint8_t)im; g->cre_fl6[pid] = (uint8_t)f6; } } }
+        if (rd8(f) == 1) { int nn = rd16(f); if (nn < 0 || nn > 1024) nn = 0;                       /* consumables (optional): effect, amount, doses, flags of class-2 objects */
+            for (int i = 0; i < nn; i++) { int pid = rd16(f), ef = rd8(f), am = rd8(f), us = rd8(f), fl = rd8(f); if (pid >= 0 && pid < 1024) { g->cons_ok[pid] = 1; g->cons_eff[pid] = (uint8_t)ef; g->cons_amt[pid] = (uint8_t)am; g->cons_left[pid] = (uint8_t)us; g->cons_fl[pid] = (uint8_t)fl; } } }
         g->has_scroll = 1;
         if (g->old_data) { fprintf(stderr, "cadaver: this level file has no animation data; re-run tools/export_level.py\n"); snprintf(g->scroll_str, sizeof g->scroll_str, "OLD LEVEL FILE. RE-RUN THE EXPORT TOOL TO ANIMATE THE CREATURES."); g->scroll_t = SCROLL_TICKS; }
     }
@@ -259,12 +261,13 @@ void game_audio_mix(Game *g, int16_t *out, int n, int rate) {
 
 /* Original $10836: add a signed amount to energy; heal plays sound $19, damage $1b; at zero the hero dies (sound $1c, $15) and the game restarts. */
 static void change_energy(Game *g, int delta) {
+    if (delta < 0 && g->atk_mask > 0 && g->atk_mask < 0x80 && (g->atk_mask & g->prot)) { delta += g->prot_amt; if (delta > 0) delta = 0; if (delta == 0) return; }   /* protection spell: contact damage of a matching type is reduced by its strength ($f770) */
     play_sound(g, delta < 0 ? 0x1b : 0x19);
     g->energy += delta;
     if (g->energy > ENERGY_MAX) g->energy = ENERGY_MAX;
     if (g->energy <= 0) {
         play_sound(g, 0x1c);
-        g->energy = ENERGY_MAX; g->hero = g->start_hero; g->cur = g->start_room; g->jump_t = 0;
+        g->poison = 0; g->prot = 0; g->energy = ENERGY_MAX; g->hero = g->start_hero; g->cur = g->start_room; g->jump_t = 0;
     }
 }
 
@@ -620,6 +623,26 @@ static void exec_verb(Game *g, int verb) {
         } else say(g, 4);
         return;
     }
+    if (verb == 9 && g->has_scroll) {                                                 /* drink / eat ($9f74): event 5, doses count down, then the effect table of the level code */
+        Obj *ob = &r->objs[g->target]; int pid = ob->pid;
+        for (int i = 0; i < g->nvm; i++) if (g->vm_pid[i] == pid) run_script(g, ob, g->vm_code[i], g->vm_len[i]);
+        ob = &r->objs[g->target];
+        if (pid >= 0 && pid < 1024 && g->cons_ok[pid]) {
+            play_sound(g, 0x0a);
+            int ef = g->cons_eff[pid], am = g->cons_amt[pid];
+            if (g->cons_left[pid] > 0) g->cons_left[pid]--;
+            if (g->cons_left[pid] == 0) { memmove(ob, ob + 1, (size_t)(r->nobj - g->target - 1) * sizeof(Obj)); r->nobj--; g->target = -1; g->nverbs = 0; g->menu = 0; }
+            if (g->cons_fl[pid] & 4) { change_energy(g, -am); say(g, 34); return; }       /* a bad potion hurts */
+            switch (ef) {
+            case 0: change_energy(g, am); break;
+            case 4: g->poison = am; g->poison_t = 0; say(g, 30); break;
+            case 6: case 8: case 11: case 12: g->prot |= 1 << (ef == 6 ? 0 : ef == 8 ? 1 : ef == 11 ? 2 : 3); g->prot_amt = am; say(g, 44); break;
+            case 7: say(g, 43); break;
+            case 13: if (g->poison) { g->poison = 0; say(g, 45); } break;
+            default: break; }
+            return;
+        }
+    }
     if (verb == 7 || verb == 4 || verb == 8 || verb == 9 || (verb == 6 && g->has_scroll)) {                                  /* use / pull a lever: event-5 script (a lever also clicks, sound $38) */
         int pid = r->objs[g->target].pid;
         { int ran = 0; int pidf = r->objs[g->target].flags; for (int i = 0; i < g->nvm; i++) if (g->vm_pid[i] == pid) { if (!ran && (verb == 7 || verb == 4)) play_sound(g, verb == 4 ? 0x30 : 0x3d); ran = 1; g->dbg_ran++; run_script(g, &r->objs[g->target], g->vm_code[i], g->vm_len[i]); } if (ran && verb == 7 && r->objs[g->target].flags == pidf) r->objs[g->target].flags ^= 1; if (ran) return; }   /* a lever whose script leaves its own state alone still flips to the pulled picture */
@@ -906,6 +929,7 @@ void game_tick(Game *g, int joy) {
     int dy = ((joy & JOY_DOWN) ? 1 : 0) - ((joy & JOY_UP) ? 1 : 0);
     g->tickno++;
     if (g->hurt_cd > 0) g->hurt_cd--;
+    if (g->poison && ++g->poison_t >= 165) { g->poison_t = 0; change_energy(g, -g->poison); }      /* poison costs its strength every 330 video frames (measured) */
     for (int i = 0; i < r->nobj; i++) { Obj *d = &r->objs[i]; if (d->dying <= 0) continue;
         if (g->spr[d->slot].nfr == 8 && g->spr[d->slot].c == 0x44) d->anim = (16 - d->dying) / 2 > 7 ? 7 : (16 - d->dying) / 2;
         if (--d->dying == 0) d->life = -1; }
@@ -955,7 +979,9 @@ void game_tick(Game *g, int joy) {
             if (!has || q->dying > 0 || (q->slot == 116 && q->anim >= 8)) continue;
             Box qb = box_of(g, q);
             if (qb.x1 + 1 < hb.x0 || hb.x1 + 1 < qb.x0 || qb.y1 + 1 < hb.y0 || hb.y1 + 1 < qb.y0 || qb.z1 < hb.z0 || hb.z1 < qb.z0) continue;
+            g->atk_mask = (q->pid >= 0 && q->pid < 1024 && g->cre_ok[q->pid]) ? g->cre_imm[q->pid] : 0;
             for (int k = 0; k < g->nvm; k++) if (g->vm_pid[k] == (q->pid | 0x8000)) { run_script(g, q, g->vm_code[k], g->vm_len[k]); g->hurt_cd = 1; }
+            g->atk_mask = 0;
         }
     }
     if (g->pull_pid && g->pull_room != g->cur) g->pull_pid = 0;
