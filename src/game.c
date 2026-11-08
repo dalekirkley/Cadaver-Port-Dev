@@ -273,7 +273,7 @@ static int pushable(const Game *g, const Obj *o) {
     if (o->slot == 8) return 0;
     const Sprite *s = &g->spr[o->slot];
     if (s->push & 2) return 1;                                  /* light objects (TAKE bit) */
-    if ((s->c & 5) == 5 && !has_contact_script(g, o)) return 1;      /* chests, crates: MOVE icon + c bit 2 (creatures also have the bits but fight back) */
+    if ((s->c & 5) == 5) return !has_contact_script(g, o) || (o->dying <= 0 && !(g->lvl1 && (o->slot == 111 || o->slot == 112 || o->slot == 116 || o->slot == 121)));      /* chests, crates: MOVE icon + c bit 2; creatures can be shoved too (room 3), except the level-1 dragon, worm, lurker and flame */
     /* barrels and jars: MOVE-icon objects with a small footprint and moderate height; altars, pillars and tables are bigger or taller */
     return (s->c & 1) && !(o->xflags & 4) && s->fx <= 7 && s->fy <= 7 && s->fz >= 10 && s->fz <= 24;
 }
@@ -734,10 +734,18 @@ static void chase_move(Game *g, Room *r, Obj *c) {
     static const int try_[3][2] = { { 1, 1 }, { 1, 0 }, { 0, 1 } };
     for (int k = 0; k < 3; k++) {
         int nx = c->x + sx * try_[k][0], ny = c->y + sy * try_[k][1]; if (nx == c->x && ny == c->y) continue;
-        if (!creature_free(g, r, c, nx, ny)) continue;
+        int pushed = 0;
+        if (!creature_free(g, r, c, nx, ny)) { if (!try_move(g, r, c, nx - c->x, ny - c->y, 0)) continue; pushed = 1; }   /* it shoves pushable objects (crates, barrels, other light things) out of its way */
+        if (pushed) { c->mdir = abs(sx) >= abs(sy) ? (sx > 0 ? 0 : 3) : (sy > 0 ? 1 : 2); return; }
         Obj gh = *c; gh.x = nx; gh.y = ny; Box cb = box_of(g, &gh);
         if (!(cb.x1 < hb.x0 || hb.x1 < cb.x0 || cb.y1 < hb.y0 || hb.y1 < cb.y0 || cb.z1 < hb.z0 || hb.z1 < cb.z0)) continue;   /* the hero's box blocks it: it stops 7 apart on x in the emulator (room 3) */
         c->x = nx; c->y = ny; c->mdir = abs(sx) >= abs(sy) ? (sx > 0 ? 0 : 3) : (sy > 0 ? 1 : 2); return;
+    }
+    if (sx == 0 || sy == 0) {                                  /* blocked straight on: slide along the obstacle on the other axis, toward the hero */
+        int fx = sx ? 0 : (ex > 0 ? -1 : 1), fy = sy ? 0 : (ey > 0 ? -1 : 1);
+        if (fx || fy) { int nx = c->x + fx, ny = c->y + fy;
+            if (creature_free(g, r, c, nx, ny)) { Obj gh = *c; gh.x = nx; gh.y = ny; Box cb = box_of(g, &gh);
+                if (cb.x1 < hb.x0 || hb.x1 < cb.x0 || cb.y1 < hb.y0 || hb.y1 < cb.y0 || cb.z1 < hb.z0 || hb.z1 < cb.z0) { c->x = nx; c->y = ny; } } }
     }
 }
 static void creature_move(Game *g, Room *r, Obj *c) {
