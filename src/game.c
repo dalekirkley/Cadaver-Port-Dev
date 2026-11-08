@@ -232,19 +232,19 @@ static void play_sound(Game *g, int snd) {
     }
 }
 
-/* Audio-only random in -1..1 (kept apart from the simulation's generator): footsteps vary +-2% in volume. */
+/* Audio-only random in -1..1 (kept apart from the simulation's generator): footsteps vary +-5% in volume. */
 static double audio_rand(Game *g) { g->aud_seed = g->aud_seed * 1664525u + 1013904223u; return ((g->aud_seed >> 8) & 0xffff) / 32767.5 - 1.0; }
 
 void game_audio_mix(Game *g, int16_t *out, int n, int rate) {
     for (int i = 0; i < n; i++) {
-        double accl = 0, accr = 0;
+        double accl = 0, accr = 0, accp = 0;
         for (int q = 0; q < 8; q++) {                                           /* note sequencers */
             SeqVoice *sq = &g->sq[q]; if (!sq->ev) continue;
             if ((sq->t -= 1.0 / rate) > 0) continue;
             if (sq->i >= sq->n) { sq->ev = NULL; continue; }
             const SndEv *e = &sq->ev[sq->i]; int last = sq->i == sq->n - 1;
             if (sq->mv >= 0) g->voice[sq->mv].step = 0;
-            if (e->sample >= 0) sq->mv = play_voice(g, e->sample, e->period, sq->snd == 0 ? e->vol * (1.0 + 0.02 * audio_rand(g)) : (double)e->vol, (last && e->sample < 65) ? (sq->snd == 0 ? 0.1 : 0.6) : e->ticks * SND_TICK_SEC); else sq->mv = -1;
+            if (e->sample >= 0) sq->mv = play_voice(g, e->sample, e->period, sq->snd == 0 ? e->vol * (1.0 + 0.05 * audio_rand(g)) : (double)e->vol, (last && e->sample < 65) ? (sq->snd == 0 ? 0.1 : 0.6) : e->ticks * SND_TICK_SEC); else sq->mv = -1;
             if (sq->mv >= 0) g->voice[sq->mv].snd = sq->snd + 1;
             sq->t += e->ticks * SND_TICK_SEC; sq->i++; sq->el += e->ticks * SND_TICK_SEC; if (sq->el > SND_MAX_SEC) sq->i = sq->n;
         }
@@ -253,12 +253,13 @@ void game_audio_mix(Game *g, int16_t *out, int n, int rate) {
             int syn = vo->sfx >= 65, p = (int)vo->pos, len, sv;
             if (syn) { len = SYN_LEN[vo->sfx - 65]; if (!len) { vo->step = 0; continue; } p %= len; sv = SYN_DATA[vo->sfx - 65][p]; if (vo->left > 0 && vo->total > 0) sv = (int)(sv * (vo->left / vo->total)); }   /* synth note: looped cycle with a linear fade */
             else { const Sfx *s = &g->sfx[vo->sfx]; if (p >= s->len) { vo->step = 0; continue; } sv = s->data[p]; }
-            if (v == 0 || v == 3) accl += sv * vo->vol; else accr += sv * vo->vol;   /* Paula: voices 0 and 3 left, 1 and 2 right */
+            if (vo->snd == 4 || vo->snd == 0x1b) accp += sv * vo->vol; else if (v == 0 || v == 3) accl += sv * vo->vol; else accr += sv * vo->vol;   /* Paula: voices 0 and 3 left, 1 and 2 right */
              vo->pos += vo->step / rate;
             if (syn && vo->pos >= 1e9) vo->pos = 0;
             if (vo->left > 0 && (vo->left -= 1.0 / rate) <= 0) vo->step = 0;
         }
-        double x = (accl + accr) * 4.0, ax = fabs(x); if (ax > 6000.0) { ax = 6000.0 + 6000.0 * tanh((ax - 6000.0) / 6000.0); x = x < 0 ? -ax : ax; }   /* mono downmix of Paula's two sides; quiet sounds stay as they were, loud stacked voices (menu confirm, pickups) are compressed towards 12000 */
+        double x = (accl + accr) * 4.0, ax = fabs(x); if (ax > 6000.0) { ax = 6000.0 + 6000.0 * tanh((ax - 6000.0) / 6000.0); x = x < 0 ? -ax : ax; }
+        { double y = accp * 4.0, ay = fabs(y); if (ay > 6000.0) { ay = 6000.0 + 6000.0 * tanh((ay - 6000.0) / 6000.0); y = y < 0 ? -ay : ay; } x += y * 0.8; }   /* pickup sounds (3 and $1a) are mixed apart and 20% quieter */   /* mono downmix of Paula's two sides; quiet sounds stay as they were, loud stacked voices (menu confirm, pickups) are compressed towards 12000 */
         out[i] = (int16_t)x;
     }
 }
