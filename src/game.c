@@ -625,6 +625,12 @@ static void exec_verb(Game *g, int verb) {
         } else say(g, 4);
         return;
     }
+    if (verb == 0xe) {                                                                /* eat ($a168): the food is removed and the drink sound plays; measured in the emulator, a loaf gives no energy */
+        Obj *ob = &r->objs[g->target];
+        for (int i = 0; i < g->nvm; i++) if (g->vm_pid[i] == ob->pid) run_script(g, ob, g->vm_code[i], g->vm_len[i]);
+        play_sound(g, 0x0a);
+        ob = &r->objs[g->target]; memmove(ob, ob + 1, (size_t)(r->nobj - g->target - 1) * sizeof(Obj)); r->nobj--; g->target = -1; g->nverbs = 0; g->menu = 0; return;
+    }
     if (verb == 9 && g->has_scroll) {                                                 /* drink / eat ($9f74): event 5, doses count down, then the effect table of the level code */
         Obj *ob = &r->objs[g->target]; int pid = ob->pid;
         for (int i = 0; i < g->nvm; i++) if (g->vm_pid[i] == pid) run_script(g, ob, g->vm_code[i], g->vm_len[i]);
