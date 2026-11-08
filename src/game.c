@@ -355,7 +355,7 @@ static void start_dying(Game *g, Obj *q) {
     for (int s = 0; s < 255 && fx < 0; s++) if (g->spr[s].nfr == 8 && g->spr[s].fr[0].w == 32 && g->spr[s].fr[0].h == 16 && g->spr[s].c == 0x44) fx = s;
     q->aon = 0; q->flags &= ~1; q->lift = 0; q->anim = 0; q->dying = fx >= 0 ? 16 : 14;
     { int pid = q->pid, fl = 0;                                   /* death handler $fc5e: score += part byte 4 (doubled by flag bit 2), sound $21 unless flag bit 1 */
-      if (pid >= 0 && pid < 1024 && g->kill_ok[pid]) { fl = g->kill_fl[pid]; g->score += g->kill_rew[pid] * ((fl & 4) ? 2 : 1); }
+      if (pid >= 0 && pid < 1024 && g->kill_ok[pid]) { fl = g->kill_fl[pid]; g->gold += g->kill_rew[pid] * ((fl & 4) ? 2 : 1); }
       if (!(fl & 2)) play_sound(g, 0x21); }
     if (fx >= 0) q->slot = fx;
 }
