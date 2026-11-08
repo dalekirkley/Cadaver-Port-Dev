@@ -297,9 +297,11 @@ static int overlap(Box a, Box b) {
 static int flat(const Game *g, const Obj *o) { const Sprite *s = &g->spr[o->slot]; return o->slot != 8 && ((!s->push && s->fz <= 2) || o->dying > 0); }   /* floor decals: walk-over, drawn under everything */
 /* Walking pushes only light objects (type byte +$c bit 1, the TAKE bit); bit 0 alone = heavy furniture (altars, pillars) that only the MOVE verb could shift. */
 static int has_contact_script(const Game *g, const Obj *o) { for (int k = 0; k < g->nvm; k++) if (g->vm_pid[k] == (o->pid | 0x8000)) return 1; return 0; }
+static int has_contact_uo(const Game *g, const Obj *q);
 static int pushable(const Game *g, const Obj *o) {
     if (o->slot == 8) return 0;
     const Sprite *s = &g->spr[o->slot];
+    if (has_contact_uo(g, o) && !(s->c & 2)) return 0;          /* destroyed by a specific object, never moved */
     if (s->push & 2) return 1;                                  /* light objects (TAKE bit) */
     if ((s->c & 5) == 5) return !has_contact_script(g, o) || (o->dying <= 0 && !(g->lvl1 && (o->slot == 111 || o->slot == 112 || o->slot == 116 || o->slot == 121)));      /* chests, crates: MOVE icon + c bit 2; creatures can be shoved too (room 3), except the level-1 dragon, worm, lurker and flame */
     /* barrels and jars: MOVE-icon objects with a small footprint and moderate height; altars, pillars and tables are bigger or taller */
@@ -330,8 +332,9 @@ static int try_move(Game *g, Room *r, Obj *o, int dx, int dy, int depth) {
 
 /* Index of the object the hero is touching in his facing direction (original $9090: probe one unit ahead with $8264). */
 /* Static scenery (boulders, pillars, walls, blocks: type bit 6, not pushable, no verb of its own): no action menu and no contact sound. */
+static int has_contact_uo(const Game *g, const Obj *q) { for (int i = 0; i < g->nuo; i++) if (g->uo_pid[i] == q->pid && (g->uo_item[i] & 0x8000)) return 1; return 0; }   /* reacts only to a specific other object touching it (room 12 wall stack and the pickaxe) */
 static int has_use_on(const Game *g, const Obj *q) { for (int i = 0; i < g->nuo; i++) if (g->uo_pid[i] == q->pid) return 1; return 0; }
-static int scenery(const Game *g, const Obj *q) { const Sprite *s = &g->spr[q->slot]; return ((s->c & 0x40) && !(s->c & 2) && !s->push && !s->b17 && s->b1d != 8) || (s->c == 0 && s->b1d == 3 && !s->push && !s->b17 && !has_use_on(g, q)); }
+static int scenery(const Game *g, const Obj *q) { const Sprite *s = &g->spr[q->slot]; if (has_contact_uo(g, q) && !s->b17 && !(s->c & 2) && !(s->c & 0x40 && s->push)) return 1; return ((s->c & 0x40) && !(s->c & 2) && !s->push && !s->b17 && s->b1d != 8) || (s->c == 0 && s->b1d == 3 && !s->push && !s->b17 && !has_use_on(g, q)); }
 static int facing_target(const Game *g) {
     const Room *r = &g->rooms[g->cur];
     int dx = ((g->facing & JOY_RIGHT) ? 1 : 0) - ((g->facing & JOY_LEFT) ? 1 : 0);
