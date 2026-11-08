@@ -687,6 +687,11 @@ static void hero_gravity(Game *g, Room *r) {
 
 
 /* Ranged weapons: fire with a class-4 item held (the stone bag) throws a rock in the facing direction (original $ee28: sound $14, missile = placement 121 = image slot 31, power 5, no ammo needed). */
+static int held_class(const Game *g) {
+    if (g->inv_hold < 0) return -1;
+    for (int i = 0; i < g->ninv; i++) if (g->inv[i] == g->inv_hold) return g->spr[g->inv_slot[i]].b16;
+    return -1;
+}
 static int held_ranged(const Game *g) {
     if (g->inv_hold < 0) return 0;
     for (int i = 0; i < g->ninv; i++) if (g->inv[i] == g->inv_hold) return g->spr[g->inv_slot[i]].b16 == 4;
@@ -893,6 +898,7 @@ void game_tick(Game *g, int joy) {
     if (g->menu) {                                                                     /* verb menu: the hero stands still */
         if (g->target < 0 || g->nverbs == 0) g->menu = 0;
         else { if (fire_edge) { g->menu = 0; play_sound(g, 0x37); exec_verb(g, g->verbs[g->sel]); } else if (new_dirs) { int os = g->sel; g->sel = move_sel(g, new_dirs); if (g->sel != os) play_sound(g, 2); } joy &= ~15; }
+    } else if (fire_edge && held_class(g) == 1) { play_sound(g, 6);                /* a held spell: the cast sound ($ed06); its effects are not decoded yet */
     } else if (fire_edge && held_ranged(g)) { fire_weapon(g); joy &= ~15;
     } else if (fire_edge && g->target >= 0 && g->nverbs > 0) { g->menu = 1; g->sel = 0; joy &= ~15; }
     else if (fire_edge && g->target < 0 && !g->jump_t && hero_grounded(g, r)) { g->jump_t = 1; g->jump_z0 = h->z; }    /* fire with nothing in front: jump */
