@@ -620,11 +620,11 @@ static void exec_verb(Game *g, int verb) {
         } else say(g, 4);
         return;
     }
-    if (verb == 7 || verb == 4 || (verb == 6 && g->has_scroll)) {                                  /* use / pull a lever: event-5 script (a lever also clicks, sound $38) */
+    if (verb == 7 || verb == 4 || verb == 8 || verb == 9 || (verb == 6 && g->has_scroll)) {                                  /* use / pull a lever: event-5 script (a lever also clicks, sound $38) */
         int pid = r->objs[g->target].pid;
         { int ran = 0; int pidf = r->objs[g->target].flags; for (int i = 0; i < g->nvm; i++) if (g->vm_pid[i] == pid) { if (!ran && (verb == 7 || verb == 4)) play_sound(g, verb == 4 ? 0x30 : 0x3d); ran = 1; g->dbg_ran++; run_script(g, &r->objs[g->target], g->vm_code[i], g->vm_len[i]); } if (ran && verb == 7 && r->objs[g->target].flags == pidf) r->objs[g->target].flags ^= 1; if (ran) return; }   /* a lever whose script leaves its own state alone still flips to the pulled picture */
     }
-    if (verb == 6 && g->has_scroll) {                                                 /* use: event 5 message scripts (inscriptions, switches) */
+    if ((verb == 6 || verb == 8) && g->has_scroll) {                                  /* use / read: event 5 message scripts (inscriptions, switches) */
         int pid = r->objs[g->target].pid;
         for (int i = 0; i < g->nuse; i++) if (g->use_pid[i] == pid && g->use_text[i] < g->ntext && g->text[g->use_text[i]][0]) {
             snprintf(g->scroll_str, sizeof g->scroll_str, "%s", g->text[g->use_text[i]]); g->scroll_t = SCROLL_TICKS; return;
