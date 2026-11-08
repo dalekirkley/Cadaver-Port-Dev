@@ -673,8 +673,11 @@ static void exec_verb(Game *g, int verb) {
               break; } }
         g->inv_slot[g->ninv] = r->objs[g->target].slot; g->inv[g->ninv++] = r->objs[g->target].pid;
         if (g->spr[r->objs[g->target].slot].name >= 0) say(g, g->spr[r->objs[g->target].slot].name);   /* original prints the item name */
+        Obj taken = r->objs[g->target];
         memmove(&r->objs[g->target], &r->objs[g->target + 1], (size_t)(r->nobj - g->target - 1) * sizeof(Obj)); r->nobj--;
-        g->target = -1; g->nverbs = 0; return;
+        g->target = -1; g->nverbs = 0;
+        for (int i = 0; i < g->nvm; i++) if (g->vm_pid[i] == (taken.pid | 0x2000)) { run_script(g, &taken, g->vm_code[i], g->vm_len[i]); break; }      /* event 7: the take trap (a creature appears) */
+        return;
     }
     if (verb == 6 && held_class(g) == 1) { cast_spell(g, g->target); return; }          /* use with a spell held: cast it on this object */
     if (verb == 8 && g->spr[r->objs[g->target].slot].b16 == 7 && g->has_scroll) { g->status_open = 1; return; }     /* the diary: health, gold, XP, level, % complete */
@@ -1087,6 +1090,7 @@ void game_tick(Game *g, int joy) {
         c->anim = seq[c->stage].f; c->atick = seq[c->stage].t;
     }
     for (int i = 0; i < r->nobj; i++) { Obj *c = &r->objs[i]; int sl = c->slot; if (g->lvl1 ? (sl < 113 || sl > 119 || sl == 116) : !(c->pid >= 0 && c->pid < 1024 && g->mv_len[c->pid])) continue;      /* path-following creatures */
+        if (c->z > 0 && c->slot != 118 && c->slot != 119 && c->slot != 116) c->z = c->z > 3 ? c->z - 3 : 0;          /* ground creatures that appear in mid-air (room 70's spider, z 50) drop to the floor */
         creature_move(g, r, c);
 }
     if (g->lvl1 && g->cur == 36) { int t = (g->tickno - g->ent_tick) % 211; if ((t == 16 || t == 68) && !((g->prot >> 3) & 1)) change_energy(g, -20); }   /* the dragon's lightning hurts after the flash (unless global bit 3 $984 is set) */
@@ -1207,7 +1211,7 @@ void game_tick(Game *g, int joy) {
         Box pb = box_of(g, p);
         for (int i = 0; i < r->nobj; i++) { Obj *q = &r->objs[i]; if (i == pi || (g->spr[q->slot].c & 0x48) == 0x48 || !pushable(g, q) || q->dying > 0) continue;
             Box qb = box_of(g, q); int cx = (qb.x0 + qb.x1) / 2, cy = (qb.y0 + qb.y1) / 2;
-            if (cx < pb.x0 || cx > pb.x1 || cy < pb.y0 || cy > pb.y1 || q->z > pb.z1 + 1) continue;
+            if (cx < pb.x0 || cx > pb.x1 || cy < pb.y0 || cy > pb.y1 || q->z > pb.z1) continue;      /* an item lying at z 2 on the pit's lip (room 70) stays put */
             int room = g->cur, ran = 0;
             for (int b = 0; b < g->rs_nb[room] && !ran; b++) { const uint8_t *c = g->rs_blk[room][b]; if ((c[1] & 0x7f) != 0x11 || c[2] != 1) continue;
                 Vm m = { g, q, c, c[0], 3, 0, 0 }; vm_block(&m); ran = 1; }
