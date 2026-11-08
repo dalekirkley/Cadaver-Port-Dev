@@ -398,4 +398,15 @@ for i in range(L.g6.n):
         p+=ln
 P('B',1);P('H',len(uo))
 for i,it,b in uo:P('HHB',i,it,len(b));o+=b
+# zone boxes (optional, last): room record byte 0 = offset of the zone section [type = number of zones][1 pad][6 bytes per zone: x0 y0 x1 y1 z0 z1] ($8ae0..$8c68). The hero overlapping zone n posts room event 0x0f with n.
+zs=[]
+for n in range(100):
+    rm=L.g3.rec(n)
+    if len(rm)<0x20 or not rm[0x17]&2:continue
+    q=rm[0]
+    if q+2>=len(rm) or not 1<=rm[q]<=4:continue
+    nz=min(rm[q],(len(rm)-q-2)//6)
+    if nz:zs.append((n,nz,rm[0x17],bytes(rm[q+2:q+2+6*nz])))
+P('B',1);P('H',len(zs))
+for n,nz,f,b in zs:P('BBB',n,nz,f);o+=b
 open(out,'wb').write(o);print(len(o),'bytes,',len(exam),'examine texts')

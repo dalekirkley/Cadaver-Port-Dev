@@ -47,7 +47,7 @@ struct Game {
     Obj hero;                         /* hero.slot = 8 */
     int facing, anim_t, moving;
     uint8_t font[46 * 24], fontmap[32]; char **text; int ntext; int day; int energy; int jump_t, jump_z0;
-    int has_scroll, old_data; uint8_t spl_ok[1024], spl_no[1024], spl_pow[1024], spl_fl[1024], spl_chg[1024]; uint8_t cons_ok[1024], cons_eff[1024], cons_amt[1024], cons_left[1024], cons_fl[1024]; int flash_t, tmr_t; uint8_t tmr[64]; unsigned aud_seed; int poison, poison_t, prot, prot_amt, atk_mask; uint8_t cre_hp[1024], cre_imm[1024], cre_fl6[1024], cre_ok[1024], spawn_snd[256], mvstate[1024], kill_ok[1024], kill_rew[1024], kill_fl[1024];   /* 0 = unknown, else movement state + 1 (3 = chase the hero) */  uint8_t scroll_tiles[18 * 32], scroll_map[0x30], font5[46 * 20]; int nexam, nuse, ntake; uint16_t take_pid[512]; int16_t take_gold[512], take_xp[512]; uint8_t counter[256], gflag[256], on_pl[1024]; int dly_arg, dly_t; int nuo; uint8_t uo_on[256]; uint16_t uo_pid[256], uo_item[256]; uint8_t uo_len[256], uo_code[256][256]; uint32_t gbits; int nhid; struct { int room; Obj o; } hid[1024]; int hurt_cd, touch_snd, touch_seen; unsigned rng_seed, rng_last; int ent_tick; uint8_t rs_done[100][16]; uint8_t *aprog[256]; int aprog_len[256], asec[256][4], asec_n[256]; struct { uint8_t has, mode, frame, rev, pc, cnt, rel; } plan[1024]; int want_level; int pull_pid, pull_room; int spawn_pid; int rs_period[100], rs_nb[100]; uint8_t *rs_blk[100][16]; int tm_room, tm_left; uint8_t mv_prog[1024][96]; uint8_t mv_len[1024], mv_step[1024][3], mv_pat[1024]; int lvl1; int nch; uint16_t ch_pid[64], ch_cont[64], ch_key[64]; uint8_t ch_flags[64], ch_trap[64]; int dbg, dbg_verb, dbg_pid, dbg_ran, dbg_execs; unsigned dbg_log[4][3]; unsigned char dbg_tr[48]; int dbg_ntr; int nvm; uint16_t vm_pid[256]; uint8_t vm_len[256], vm_code[256][255]; uint16_t exam_pid[512], exam_text[512], use_pid[512], use_text[512];   /* examine scroll */
+    int has_scroll, old_data; uint8_t spl_ok[1024], spl_no[1024], spl_pow[1024], spl_fl[1024], spl_chg[1024]; uint8_t cons_ok[1024], cons_eff[1024], cons_amt[1024], cons_left[1024], cons_fl[1024]; int flash_t, tmr_t; uint8_t tmr[64]; unsigned aud_seed; int poison, poison_t, prot, prot_amt, atk_mask; uint8_t cre_hp[1024], cre_imm[1024], cre_fl6[1024], cre_ok[1024], spawn_snd[256], mvstate[1024], kill_ok[1024], kill_rew[1024], kill_fl[1024];   /* 0 = unknown, else movement state + 1 (3 = chase the hero) */  uint8_t scroll_tiles[18 * 32], scroll_map[0x30], font5[46 * 20]; int nexam, nuse, ntake; uint16_t take_pid[512]; int16_t take_gold[512], take_xp[512]; uint8_t counter[256], gflag[256], on_pl[1024]; uint8_t zn_n[100], zn_f[100], zn_b[100][4][6]; int dly_arg, dly_t; int nuo; uint8_t uo_on[256]; uint16_t uo_pid[256], uo_item[256]; uint8_t uo_len[256], uo_code[256][256]; uint32_t gbits; int nhid; struct { int room; Obj o; } hid[1024]; int hurt_cd, touch_snd, touch_seen; unsigned rng_seed, rng_last; int ent_tick; uint8_t rs_done[100][16]; uint8_t *aprog[256]; int aprog_len[256], asec[256][4], asec_n[256]; struct { uint8_t has, mode, frame, rev, pc, cnt, rel; } plan[1024]; int want_level; int pull_pid, pull_room; int spawn_pid; int rs_period[100], rs_nb[100]; uint8_t *rs_blk[100][16]; int tm_room, tm_left; uint8_t mv_prog[1024][96]; uint8_t mv_len[1024], mv_step[1024][3], mv_pat[1024]; int lvl1; int nch; uint16_t ch_pid[64], ch_cont[64], ch_key[64]; uint8_t ch_flags[64], ch_trap[64]; int dbg, dbg_verb, dbg_pid, dbg_ran, dbg_execs; unsigned dbg_log[4][3]; unsigned char dbg_tr[48]; int dbg_ntr; int nvm; uint16_t vm_pid[256]; uint8_t vm_len[256], vm_code[256][255]; uint16_t exam_pid[512], exam_text[512], use_pid[512], use_text[512];   /* examine scroll */
     int scroll_t; char scroll_str[256]; long score; int map_open, map_px, map_py, status_open; long gold, xp, level; uint8_t visited[100];
     int has_icons; uint8_t icons[20 * 112]; uint16_t slotpos[8][4]; uint8_t verbtab[16];
     int target, nverbs, verbs[8], menu, sel, prev_joy, msg, msg_t, ninv, inv[64], inv_slot[64], inv_mode, inv_sel, inv_hold;     /* verb menu state */
@@ -177,6 +177,8 @@ Game *game_load(const char *path) {
             for (int i = 0; i < nn; i++) { int pid = rd16(f), no = rd8(f), pw = rd8(f), fl = rd8(f), ch = rd8(f); if (pid >= 0 && pid < 1024) { g->spl_ok[pid] = 1; g->spl_no[pid] = (uint8_t)no; g->spl_pow[pid] = (uint8_t)pw; g->spl_fl[pid] = (uint8_t)fl; g->spl_chg[pid] = (uint8_t)ch; } } }
         if (rd8(f) == 1) { int nn = rd16(f); if (nn < 0 || nn > 255) nn = 0;                       /* use-on scripts (optional): event 0x12 blocks, item id + ops */
             for (int i = 0; i < nn; i++) { int pid = rd16(f), it = rd16(f), ln = rd8(f); g->uo_pid[i] = (uint16_t)pid; g->uo_item[i] = (uint16_t)it; g->uo_len[i] = (uint8_t)ln; for (int k = 0; k < ln; k++) g->uo_code[i][k] = (uint8_t)rd8(f); g->nuo = i + 1; } }
+        if (rd8(f) == 1) { int nn = rd16(f); if (nn < 0 || nn > 100) nn = 0;                         /* zone boxes (optional): room, count, room flags, 6 bytes per zone */
+            for (int i = 0; i < nn; i++) { int rm = rd8(f), nz = rd8(f), fl = rd8(f); if (nz > 4) nz = 4; for (int k = 0; k < nz; k++) for (int j = 0; j < 6; j++) { int v = rd8(f); if (rm >= 0 && rm < 100) g->zn_b[rm][k][j] = (uint8_t)v; } if (rm >= 0 && rm < 100) { g->zn_n[rm] = (uint8_t)nz; g->zn_f[rm] = (uint8_t)fl; } } }
         g->has_scroll = 1;
         if (g->old_data) { fprintf(stderr, "cadaver: this level file has no animation data; re-run tools/export_level.py\n"); snprintf(g->scroll_str, sizeof g->scroll_str, "OLD LEVEL FILE. RE-RUN THE EXPORT TOOL TO ANIMATE THE CREATURES."); g->scroll_t = SCROLL_TICKS; }
     }
@@ -301,6 +303,7 @@ static int pushable(const Game *g, const Obj *o) {
     if (s->push & 2) return 1;                                  /* light objects (TAKE bit) */
     if ((s->c & 5) == 5) return !has_contact_script(g, o) || (o->dying <= 0 && !(g->lvl1 && (o->slot == 111 || o->slot == 112 || o->slot == 116 || o->slot == 121)));      /* chests, crates: MOVE icon + c bit 2; creatures can be shoved too (room 3), except the level-1 dragon, worm, lurker and flame */
     /* barrels and jars: MOVE-icon objects with a small footprint and moderate height; altars, pillars and tables are bigger or taller */
+    if (g->lvl1 && o->slot == 83) return 1;                      /* the skeleton lying on the floor */
     return (s->c & 1) && !(o->xflags & 4) && s->fx <= 7 && s->fy <= 7 && s->fz >= 10 && s->fz <= 24;
 }
 
@@ -327,7 +330,8 @@ static int try_move(Game *g, Room *r, Obj *o, int dx, int dy, int depth) {
 
 /* Index of the object the hero is touching in his facing direction (original $9090: probe one unit ahead with $8264). */
 /* Static scenery (boulders, pillars, walls, blocks: type bit 6, not pushable, no verb of its own): no action menu and no contact sound. */
-static int scenery(const Game *g, const Obj *q) { const Sprite *s = &g->spr[q->slot]; return (s->c & 0x40) && !(s->c & 2) && !s->push && !s->b17 && s->b1d != 8; }
+static int has_use_on(const Game *g, const Obj *q) { for (int i = 0; i < g->nuo; i++) if (g->uo_pid[i] == q->pid) return 1; return 0; }
+static int scenery(const Game *g, const Obj *q) { const Sprite *s = &g->spr[q->slot]; return ((s->c & 0x40) && !(s->c & 2) && !s->push && !s->b17 && s->b1d != 8) || (s->c == 0 && s->b1d == 3 && !s->push && !s->b17 && !has_use_on(g, q)); }
 static int facing_target(const Game *g) {
     const Room *r = &g->rooms[g->cur];
     int dx = ((g->facing & JOY_RIGHT) ? 1 : 0) - ((g->facing & JOY_LEFT) ? 1 : 0);
@@ -337,6 +341,11 @@ static int facing_target(const Game *g) {
     for (int i = 0; i < r->nobj; i++) {
         const Obj *q = &r->objs[i]; if (flat(g, q)) continue;
         if (overlap(gb, box_of(g, q))) return scenery(g, q) ? -1 : i;
+    }
+    for (int i = 0; i < r->nobj; i++) {                       /* wall-mounted plates and keyholes are thinner than the margin the hero must keep from the wall: reach 3 units */
+        const Obj *q = &r->objs[i]; if (flat(g, q) || scenery(g, q)) continue;
+        Box qb = box_of(g, q); if ((dx ? qb.x1 - qb.x0 : qb.y1 - qb.y0) > 1) continue;
+        Obj far = g->hero; far.x += 3 * dx; far.y += 3 * dy; if (overlap(box_of(g, &far), qb)) return i;
     }
     return -1;
 }
@@ -440,7 +449,8 @@ static void vm_op(Vm *m, int op) {
     case 0x30: m->cond = m->cond == 0; vm_op(m, 0x0e); break;                                              /* block runs when the condition FAILED ($10222) */
     case 0x31: { int i = m->c[m->p], v = m->c[m->p + 1]; m->p += 2; g->gflag[i] = (uint8_t)v; if (i < 64) g->tmr[i] = (uint8_t)v; break; }              /* global flag byte ($108d8) */
     case 0x4c: { int n = m->c[m->p++]; m->cond = (g->prot >> (n & 7) & 1) ? m->cond + 1 : 0; break; }            /* global bit n set ($108cc) */
-    case 0x2f: { int id = vm_word(m); Obj *q = id >= 0x8000 ? m->self : find_obj(g, id); m->cond = q ? m->cond + 1 : 0; break; }   /* object exists ($108bc) */
+    case 0x2f: { int id = vm_word(m); Obj *q = id >= 0x8000 ? m->self : find_obj(g, id); if (!q && id < 0x8000) for (int i = 0; i < g->nhid; i++) if (g->hid[i].o.pid == id) { q = &g->hid[i].o; break; }      /* hidden objects exist too (room 30/31 creatures waiting to be revealed) */
+        m->cond = q ? m->cond + 1 : 0; break; }   /* object exists ($108bc) */
     case 0x2b: { int id = vm_word(m); int rm = m->c[m->p++]; if (rm == 0xfe) rm = g->cur; int in = 0;                /* object is in room rm ($103a8) */
         for (int r2 = 0; r2 < 100 && !in; r2++) { Room *q = &g->rooms[r2]; if (!q->valid) continue; for (int i = 0; i < q->nobj; i++) if (q->objs[i].pid == id) { in = (r2 == rm); r2 = 100; break; } }
         for (int i = 0; i < g->nhid && !in; i++) if (g->hid[i].o.pid == id && g->hid[i].room == rm) in = 1;
@@ -1060,7 +1070,7 @@ void game_tick(Game *g, int joy) {
             int t = (c->stage + 60) % 78; c->stage = c->home == g->cur ? t - 59 : c->stage + 1;   /* a fresh worm starts in its rest phase */
             if (c->home != g->cur && c->stage >= 78 * 3) { Obj back = *c; back.stage = 0; back.lift = 0; back.anim = 8; back.atick = 8; Room *hr = &g->rooms[back.home];
                 r->objs[i] = r->objs[--r->nobj]; if (hr->valid) hr->objs[hr->nobj++] = back; i--; continue; }
-            if (t < 30) { c->anim = 15; c->lift = arc[(t + 1) / 3 > 9 ? 9 : (t + 1) / 3]; }
+            if (t < 30) { c->anim = 15; { int u = t + 1, k = u / 3, f = u % 3; c->lift = k >= 9 ? 0 : arc[k] + (arc[k + 1] - arc[k]) * f / 3; } }   /* interpolated every tick: the original steps every 3 ticks, which looks jerky at this frame rate */
             else if (t < 60) { c->anim = ((t - 30) / 3) % 2 ? 13 : 12; c->lift = 0; }
             else { c->anim = 14; c->lift = 0; }
             continue; }
@@ -1107,7 +1117,7 @@ void game_tick(Game *g, int joy) {
             Obj gh = *h; gh.x += dx; gh.y += dy; Box gb = box_of(g, &gh); int snd = 0;
             for (int i = 0; i < r->nobj && !snd; i++) { const Obj *q = &r->objs[i]; if (flat(g, q) || q->dying > 0 || !overlap(gb, box_of(g, q))) continue;
                 if (scenery(g, q)) { snd = -1; break; }
-                int ty = g->spr[q->slot].b1d; snd = ty >= 0 && ty < 19 ? touch_tab[ty] : 57; }
+                int ty = g->spr[q->slot].b1d; if (pushable(g, q)) { snd = 16; break; } snd = ty >= 0 && ty < 19 ? touch_tab[ty] : 57; }
             if (snd < 0) snd = 0; else if (snd != g->touch_snd) { if (g->touch_snd) stop_sound(g, g->touch_snd); if (snd) play_sound(g, snd); } if (snd != g->touch_snd && g->touch_snd) stop_sound(g, g->touch_snd); g->touch_snd = snd; g->touch_seen = 1;
         }
         if (try_move(g, r, h, dx, dy, 0)) { if (pulled) try_move(g, r, pulled, dx, dy, 0); }
@@ -1158,6 +1168,15 @@ void game_tick(Game *g, int joy) {
         else { h->z = nz; if (++g->jump_t > 20) g->jump_t = 0; }
     }
     else hero_gravity(g, r);
+    /* Room zones ($8b54): the hero's box overlapping zone n of the room runs the room's event-0x0f block for n (blocks without the keep bit run once). Rooms with pits and plates are handled below. */
+    if (g->zn_n[g->cur]) { int haspit = 0; for (int i = 0; i < r->nobj; i++) if ((g->spr[r->objs[i].slot].c & 0x48) == 0x48) haspit = 1;
+      if (!haspit) { Box hb = box_of(g, &g->hero); int room = g->cur;
+        for (int zi = g->zn_n[room]; zi >= 1; zi--) { const uint8_t *z = g->zn_b[room][zi - 1];
+            if (hb.x1 < z[0] || hb.x0 > z[2] || hb.y1 < z[1] || hb.y0 > z[3] || hb.z1 < z[4] || hb.z0 > z[5]) continue;
+            for (int b = 0; b < g->rs_nb[room]; b++) { const uint8_t *c = g->rs_blk[room][b]; if ((c[1] & 0x7f) != 0x0f || c[0] < 4 || c[2] != zi || c[3] == 0x03) continue;
+                if (!(c[1] & 0x80)) { if (g->rs_done[room][b]) continue; g->rs_done[room][b] = 1; }
+                Vm m = { g, &g->hero, c, c[0], 3, 0, 0 }; vm_block(&m); if (g->cur != room) break; }
+            if (g->cur != room) break; } } }
     /* Pits and pressure plates (floor objects with type bits 0x48). A plate is named by a room event-0x0f block that starts with op 0x03 on it (`03 id`): the block runs once when
        the hero steps onto that plate (the original's trap number is the plate's zone; the block names it). Over any other such object (a pit) the trap-1 block runs every tick
        and teleports him down (op 0x25). */
