@@ -827,7 +827,7 @@ void game_tick(Game *g, int joy) {
     if (g->hurt_cd > 0) g->hurt_cd--;
     for (int i = 0; i < r->nobj; i++) { Obj *c = &r->objs[i]; if (c->slot < 0 || c->slot > 255 || !g->aprog[c->slot] || !c->aon) continue;      /* animation programs of creatures and props */
         anim_step(g, c);
-        if (!g->lvl1 || c->slot == 113 || c->slot == 117 || c->slot == 118 || c->slot == 119) c->anim = c->aframe;   /* level 1: walkers 113/117/119 follow their programs (checked against the original's stepper: 3, 2 and 2 ticks per frame; the old hand-measured table was aliased by the capture interval) */
+        if (!g->lvl1 || (c->slot != 111 && c->slot != 112 && c->slot != 116 && c->slot != 121)) c->anim = c->aframe;   /* level 1: the dragon, flame, worm and water lurker keep their hand logic */   /* level 1: walkers 113/117/119 follow their programs (checked against the original's stepper: 3, 2 and 2 ticks per frame; the old hand-measured table was aliased by the capture interval) */
         else if (getenv("CADAVER_ANIMCHK") && (c->aframe != c->anim || getenv("CADAVER_ANIMALL"))) fprintf(stderr, "ANIM slot %d tick %u prog %d walk/special %d\n", c->slot, g->tickno, c->aframe, c->anim); }
     for (int i = 0; i < r->nobj; i++) {                      /* water lurker (slot 116): ripples, surfaces, opens its mouth, sinks, then returns to the pool until the next timer. Frame order and timing are read off the emulator, not decoded */
         Obj *c = &r->objs[i];

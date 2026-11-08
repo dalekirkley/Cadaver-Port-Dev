@@ -290,13 +290,13 @@ for s_ in range(255):
     if (dx or dy) and abs(dx)<64 and abs(dy)<64:f0.append((s_,dx,dy))
 P('B',1);P('H',len(f0))
 for s_,dx,dy in f0:P('Bhh',s_,dx,dy)
-# animation programs (optional, last section): for every multi-image type record with behaviour (flag bit 6) the program bytes (2-byte steps from +0x28
+# animation programs (optional, last section): for every multi-image type record whose flag bit 2 is set (the original steps exactly those) the program bytes (2-byte steps from +0x28
 # up to the frame table, interpreted like the original's stepper at $a97c, see animation-tokens.md), then per placement the initial animation record
 # (placement[+0xe]: mode, frame, reverse, pc, divider counter, divider reload).
 progs={}
 for s_ in range(255):
     e=L.g2.rec(s_)
-    if not e or len(e)<0x30 or s16(e,0x18)>=0 or not (e[0x0c]&4 and e[0x0c]&0x40) or e[0x20]==0:continue
+    if not e or len(e)<0x30 or s16(e,0x18)>=0 or not e[0x0c]&4 or e[0x20]==0:continue
     tab=0x28+u16(e,0x22)
     if 0<tab-0x28<=510:progs[s_]=bytes(e[0x28:tab])
 P('B',1);P('H',len(progs))
