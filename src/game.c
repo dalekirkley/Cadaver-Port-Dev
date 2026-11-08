@@ -47,7 +47,7 @@ struct Game {
     Obj hero;                         /* hero.slot = 8 */
     int facing, anim_t, moving;
     uint8_t font[46 * 24], fontmap[32]; char **text; int ntext; int day; int energy; int jump_t, jump_z0;
-    int has_scroll, old_data; uint8_t scroll_tiles[18 * 32], scroll_map[0x30], font5[46 * 20]; int nexam, nuse, ntake; uint16_t take_pid[512]; int16_t take_gold[512], take_xp[512]; uint8_t counter[256], gflag[256]; uint32_t gbits; int nhid; struct { int room; Obj o; } hid[1024]; int hurt_cd; unsigned rng_seed, rng_last; int ent_tick; uint8_t rs_done[100][16]; uint8_t *aprog[256]; int aprog_len[256], asec[256][4], asec_n[256]; struct { uint8_t has, mode, frame, rev, pc, cnt, rel; } plan[1024]; int want_level; int pull_pid, pull_room; int spawn_pid; int rs_period[100], rs_nb[100]; uint8_t *rs_blk[100][16]; int tm_room, tm_left; uint8_t mv_prog[1024][96]; uint8_t mv_len[1024], mv_step[1024][3], mv_pat[1024]; int lvl1; int nch; uint16_t ch_pid[64], ch_cont[64], ch_key[64]; uint8_t ch_flags[64], ch_trap[64]; int dbg, dbg_verb, dbg_pid, dbg_ran, dbg_execs; unsigned dbg_log[4][3]; unsigned char dbg_tr[48]; int dbg_ntr; int nvm; uint16_t vm_pid[256]; uint8_t vm_len[256], vm_code[256][255]; uint16_t exam_pid[512], exam_text[512], use_pid[512], use_text[512];   /* examine scroll */
+    int has_scroll, old_data; uint8_t mvstate[1024];   /* 0 = unknown, else movement state + 1 (3 = chase the hero) */  uint8_t scroll_tiles[18 * 32], scroll_map[0x30], font5[46 * 20]; int nexam, nuse, ntake; uint16_t take_pid[512]; int16_t take_gold[512], take_xp[512]; uint8_t counter[256], gflag[256]; uint32_t gbits; int nhid; struct { int room; Obj o; } hid[1024]; int hurt_cd; unsigned rng_seed, rng_last; int ent_tick; uint8_t rs_done[100][16]; uint8_t *aprog[256]; int aprog_len[256], asec[256][4], asec_n[256]; struct { uint8_t has, mode, frame, rev, pc, cnt, rel; } plan[1024]; int want_level; int pull_pid, pull_room; int spawn_pid; int rs_period[100], rs_nb[100]; uint8_t *rs_blk[100][16]; int tm_room, tm_left; uint8_t mv_prog[1024][96]; uint8_t mv_len[1024], mv_step[1024][3], mv_pat[1024]; int lvl1; int nch; uint16_t ch_pid[64], ch_cont[64], ch_key[64]; uint8_t ch_flags[64], ch_trap[64]; int dbg, dbg_verb, dbg_pid, dbg_ran, dbg_execs; unsigned dbg_log[4][3]; unsigned char dbg_tr[48]; int dbg_ntr; int nvm; uint16_t vm_pid[256]; uint8_t vm_len[256], vm_code[256][255]; uint16_t exam_pid[512], exam_text[512], use_pid[512], use_text[512];   /* examine scroll */
     int scroll_t; char scroll_str[256]; long score; int map_open, map_px, map_py, status_open; long gold, xp, level; uint8_t visited[100];
     int has_icons; uint8_t icons[20 * 112]; uint16_t slotpos[8][4]; uint8_t verbtab[16];
     int target, nverbs, verbs[8], menu, sel, prev_joy, msg, msg_t, ninv, inv[64], inv_slot[64], inv_mode, inv_sel, inv_hold;     /* verb menu state */
@@ -163,6 +163,8 @@ Game *game_load(const char *path) {
                 g->asec_n[sl] = n; for (int j = 0; j < n; j++) g->asec[sl][j] = st[j]; }
             int nq = rd16(f); for (int i = 0; i < nq; i++) { int pid = rd16(f), md = rd8(f), fr = rd8(f), rv = rd8(f), pc = rd8(f), cn = rd8(f), rl = rd8(f);
                 if (pid >= 0 && pid < 1024) { g->plan[pid].has = 1; g->plan[pid].mode = (uint8_t)md; g->plan[pid].frame = (uint8_t)fr; g->plan[pid].rev = (uint8_t)rv; g->plan[pid].pc = (uint8_t)pc; g->plan[pid].cnt = (uint8_t)cn; g->plan[pid].rel = (uint8_t)rl; } } }
+        if (rd8(f) == 1) { int nm2 = rd16(f); if (nm2 < 0 || nm2 > 1024) nm2 = 0;                    /* movement states (optional, very last section) */
+            for (int i = 0; i < nm2; i++) { int pid = rd16(f), st = rd8(f); if (pid >= 0 && pid < 1024) g->mvstate[pid] = (uint8_t)(st + 1); } }
         g->has_scroll = 1;
         if (g->old_data) { fprintf(stderr, "cadaver: this level file has no animation data; re-run tools/export_level.py\n"); snprintf(g->scroll_str, sizeof g->scroll_str, "OLD LEVEL FILE. RE-RUN THE EXPORT TOOL TO ANIMATE THE CREATURES."); g->scroll_t = SCROLL_TICKS; }
     }
@@ -706,8 +708,32 @@ static int creature_free(Game *g, Room *r, Obj *o, int nx, int ny) {
     if (nx >= r->sx * 8 || ny >= r->sy * 8 || nx - fx + 1 < MARGIN || ny - fy + 1 < MARGIN) return 0;
     return 1;                                                    /* static furniture does not stop them in the emulator captures (room 38); only the room edge does */
 }
+/* Chase routine of movement state 3 (level code $964a0 + classifier $965b8, decoded 2026-11-07, see claude/creature-ai.md): every move tick the creature takes one step toward the hero
+   in one of eight directions. e = creature - hero per axis; if both |e| <= 2 it stands still; otherwise the axis difference |ey|-|ex| picks pure x, pure y or a diagonal (tolerance 2).
+   Original quirk kept: with the hero up and to the left, an x-dominant offset gives the diagonal, never pure left. One step every (pattern low nibble + 1) ticks, size = step bytes. */
+static void chase_move(Game *g, Room *r, Obj *c) {
+    int pid = c->pid; const Obj *h = &g->hero;
+    c->macc++; if (c->macc <= (g->mv_pat[pid] & 15)) return; c->macc = 0;
+    int ex = c->x - h->x, ey = c->y - h->y, ax = ex < 0 ? -ex : ex, ay = ey < 0 ? -ey : ey;
+    if (ax <= 2 && ay <= 2) return;
+    int diff = ay - ax, d6;
+    if (ex < 0) { if (ey >= 0) d6 = diff < 0 ? (diff > -2 ? 1 : 2) : (diff < 2 ? 1 : 0); else d6 = diff < 0 ? (diff > -2 ? 3 : 2) : (diff < 2 ? 3 : 4); }
+    else { if (ey < 0) d6 = diff < 0 ? (diff > -2 ? 5 : 6) : (diff < 2 ? 5 : 4); else d6 = diff < 0 ? 7 : (diff < 2 ? 7 : 0); }
+    static const int dxs[8] = { 0, 1, 1, 1, 0, -1, -1, -1 }, dys[8] = { -1, -1, 0, 1, 1, 1, 0, -1 };
+    int sx = dxs[d6] * (g->mv_step[pid][0] ? g->mv_step[pid][0] : 1), sy = dys[d6] * (g->mv_step[pid][1] ? g->mv_step[pid][1] : 1);
+    Box hb = box_of(g, h);
+    static const int try_[3][2] = { { 1, 1 }, { 1, 0 }, { 0, 1 } };
+    for (int k = 0; k < 3; k++) {
+        int nx = c->x + sx * try_[k][0], ny = c->y + sy * try_[k][1]; if (nx == c->x && ny == c->y) continue;
+        if (!creature_free(g, r, c, nx, ny)) continue;
+        Obj gh = *c; gh.x = nx; gh.y = ny; Box cb = box_of(g, &gh);
+        if (!(cb.x1 < hb.x0 || hb.x1 < cb.x0 || cb.y1 < hb.y0 || hb.y1 < cb.y0 || cb.z1 < hb.z0 || hb.z1 < cb.z0)) continue;   /* the hero's box blocks it: it stops 7 apart on x in the emulator (room 3) */
+        c->x = nx; c->y = ny; c->mdir = abs(sx) >= abs(sy) ? (sx > 0 ? 0 : 3) : (sy > 0 ? 1 : 2); return;
+    }
+}
 static void creature_move(Game *g, Room *r, Obj *c) {
-    int pid = c->pid; if (pid < 0 || pid >= 1024 || !g->mv_len[pid] || c->mstop || c->life > 0) return;
+    int pid = c->pid; if (pid >= 0 && pid < 1024 && g->mvstate[pid] == 4 && c->life <= 0 && !(g->lvl1 && (c->slot == 112 || c->slot == 116 || c->slot == 121))) { chase_move(g, r, c); return; }
+    if (pid < 0 || pid >= 1024 || !g->mv_len[pid] || c->mstop || c->life > 0) return;
     if (c->mwait > 0) { c->mwait--; return; }
     const uint8_t *pr = g->mv_prog[pid]; int len = g->mv_len[pid];
     for (int guard = 0; guard < 8 && !(c->mc[0] | c->mc[1] | c->mc[2]) && !c->mwait && !c->mstop; guard++) {

@@ -310,4 +310,18 @@ for pid in range(1024):
     pl.append((pid,pr[q],pr[q+1],pr[q+2],pr[q+3],pr[q+8],pr[q+9]))
 P('H',len(pl))
 for t in pl:P('H6B',*t)
+# movement states (optional, very last section): per creature placement (type flag bit 2, class byte +0x16 == 3) the state byte of its movement record
+# (record offset = placement byte +0xd, state = its byte 0). State 3 = the creature is driven by the chase routine at $964a0 of the level's behaviour code
+# instead of a movement program (level 1: slots 114 and 115 approach the hero; see claude/creature-ai.md).
+mst=[]
+for pid in range(1024):
+    pr=L.g6.rec(pid)
+    if len(pr)<16:continue
+    e=L.g2.rec(u16(pr,6))
+    if not e or len(e)<0x30 or not e[0x0c]&4 or e[0x16]!=3:continue
+    q=pr[0xd]
+    if q==0 or q+10>len(pr):continue
+    mst.append((pid,pr[q]))
+P('B',1);P('H',len(mst))
+for t in mst:P('HB',*t)
 open(out,'wb').write(o);print(len(o),'bytes,',len(exam),'examine texts')
