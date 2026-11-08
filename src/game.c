@@ -22,7 +22,7 @@ typedef struct { int sfx; double pos, step; int vol; double left, total; } Voice
 typedef struct { const SndEv *ev; int n, i, mv, snd; double t, el; } SeqVoice;   /* left = seconds before the voice is cut (0 = play to the end) */
 typedef struct { int state, w, h; int16_t f[5]; int push; int16_t fx, fy, fz, name; uint8_t c, b16, b17, b1d; uint8_t *px; int aw, ah, ax, ay, f0x, f0y, creature; uint8_t *apx; int nfr; struct { int w, h, dx, dy; uint8_t *px; } fr[16]; } Sprite;
 typedef struct { int16_t hx, hy; int w, h; uint8_t *px; } Frame;
-typedef struct { int x, y, z, slot, flags, pid, xflags, anim, atick, home, stage, vx, vy, life, hp, lift, mpc, mwait, mstop, mc[3], mdir, skey, macc, aon, amode, aframe, arev, apc, acnt, arel, adir; } Obj;   /* life > 0: a missile in flight; hp: remaining health of a creature (0 = not set yet) */
+typedef struct { int x, y, z, slot, flags, pid, xflags, anim, atick, home, stage, vx, vy, life, hp, lift, mpc, mwait, mstop, mc[3], mdir, skey, macc, aon, amode, aframe, arev, apc, acnt, arel, adir, dying; } Obj;   /* life > 0: a missile in flight; hp: remaining health of a creature (0 = not set yet) */
 #define MISSILE_SLOT 31          /* the thrown-rock image (16x7) */
 #define MISSILE_PID 9000
 #define MISSILE_SPEED 3
@@ -682,14 +682,14 @@ static void update_missiles(Game *g) {
             if (m->x >= r->sx * 8 || m->y >= r->sy * 8 || m->x < MARGIN || m->y < MARGIN) { dead = 1; break; }
             Box mb = box_of(g, m);
             for (int k = 0; k < r->nobj; k++) {
-                Obj *q = &r->objs[k]; if (k == i || q->life != 0 || flat(g, q)) continue;
+                Obj *q = &r->objs[k]; if (k == i || q->life != 0 || q->dying > 0 || flat(g, q)) continue;
                 if (!overlap(mb, box_of(g, q))) continue;
                 if (has_contact_script(g, q)) {
                     if (q->hp <= 0) q->hp = CREATURE_HP;
                     q->hp -= ROCK_POWER;
                     { static const uint8_t hit_snd[19] = { 9, 9, 9, 13, 13, 9, 19, 9, 9, 9, 19, 9, 13, 9, 9, 13, 13, 19, 9 };    /* victim's hit sound, table $5bf8 indexed by type byte +$1d */
                       int ty = g->spr[q->slot].b1d; play_sound(g, ty >= 0 && ty < 19 ? hit_snd[ty] : 0x1a); }
-                    if (q->hp <= 0) q->life = -1;                      /* killed: removed below */
+                    if (q->hp <= 0) { q->dying = 14; q->aon = 0; }   /* killed: freezes and blinks for 14 ticks, then is removed (the death script hides it; the exact original effect is not measured) */
                 }
                 dead = 1; break;
             }
@@ -706,7 +706,13 @@ static int creature_free(Game *g, Room *r, Obj *o, int nx, int ny) {
     Obj ghost = *o; ghost.x = nx; ghost.y = ny; Box gb = box_of(g, &ghost);
     int fx = gb.x1 - gb.x0 + 1, fy = gb.y1 - gb.y0 + 1;
     if (nx >= r->sx * 8 || ny >= r->sy * 8 || nx - fx + 1 < MARGIN || ny - fy + 1 < MARGIN) return 0;
-    return 1;                                                    /* static furniture does not stop them in the emulator captures (room 38); only the room edge does */
+    Box cur = box_of(g, o);
+    for (int i = 0; i < r->nobj; i++) {                          /* solid furniture stops them; one they already overlap (spawned inside) does not trap them */
+        const Obj *q = &r->objs[i]; if (q == o || flat(g, q) || has_contact_script(g, q)) continue;
+        Box qb = box_of(g, q);
+        if (overlap(gb, qb) && !overlap(cur, qb)) return 0;
+    }
+    return 1;
 }
 /* Chase routine of movement state 3 (level code $964a0 + classifier $965b8, decoded 2026-11-07, see claude/creature-ai.md): every move tick the creature takes one step toward the hero
    in one of eight directions. e = creature - hero per axis; if both |e| <= 2 it stands still; otherwise the axis difference |ey|-|ex| picks pure x, pure y or a diagonal (tolerance 2).
@@ -732,6 +738,7 @@ static void chase_move(Game *g, Room *r, Obj *c) {
     }
 }
 static void creature_move(Game *g, Room *r, Obj *c) {
+    if (c->dying > 0) return;
     int pid = c->pid; if (pid >= 0 && pid < 1024 && g->mvstate[pid] == 4 && c->life <= 0 && !(g->lvl1 && (c->slot == 112 || c->slot == 116 || c->slot == 121))) { chase_move(g, r, c); return; }
     if (pid < 0 || pid >= 1024 || !g->mv_len[pid] || c->mstop || c->life > 0) return;
     if (c->mwait > 0) { c->mwait--; return; }
@@ -853,6 +860,7 @@ void game_tick(Game *g, int joy) {
     int dy = ((joy & JOY_DOWN) ? 1 : 0) - ((joy & JOY_UP) ? 1 : 0);
     g->tickno++;
     if (g->hurt_cd > 0) g->hurt_cd--;
+    for (int i = 0; i < r->nobj; i++) if (r->objs[i].dying > 0 && --r->objs[i].dying == 0) r->objs[i].life = -1;
     for (int i = 0; i < r->nobj; i++) { Obj *c = &r->objs[i]; if (c->slot < 0 || c->slot > 255 || !g->aprog[c->slot] || !c->aon) continue;      /* animation programs of creatures and props */
         anim_step(g, c);
         if (!g->lvl1 || (c->slot != 111 && c->slot != 112 && c->slot != 116 && c->slot != 121)) c->anim = c->aframe;   /* level 1: the dragon, flame, worm and water lurker keep their hand logic */   /* level 1: walkers 113/117/119 follow their programs (checked against the original's stepper: 3, 2 and 2 ticks per frame; the old hand-measured table was aliased by the capture interval) */
@@ -896,7 +904,7 @@ void game_tick(Game *g, int joy) {
         for (int i = 0; i < r->nobj && g->hurt_cd == 0; i++) {
             Obj *q = &r->objs[i]; int has = 0;
             for (int k = 0; k < g->nvm; k++) if (g->vm_pid[k] == (q->pid | 0x8000)) { has = 1; break; }
-            if (!has || (q->slot == 116 && q->anim >= 8)) continue;
+            if (!has || q->dying > 0 || (q->slot == 116 && q->anim >= 8)) continue;
             Box qb = box_of(g, q);
             if (qb.x1 + 1 < hb.x0 || hb.x1 + 1 < qb.x0 || qb.y1 + 1 < hb.y0 || hb.y1 + 1 < qb.y0 || qb.z1 < hb.z0 || hb.z1 < qb.z0) continue;
             for (int k = 0; k < g->nvm; k++) if (g->vm_pid[k] == (q->pid | 0x8000)) { run_script(g, q, g->vm_code[k], g->vm_len[k]); g->hurt_cd = 1; }
@@ -1191,7 +1199,7 @@ void game_render(const Game *g, uint32_t *fb) {
     memcpy(fb, r->bg, SCREEN_W * SCREEN_H * 4);
     DrawItem items[256]; int n = 0;
     for (int i = 0; i < r->nobj && n < 255; i++) {
-        const Obj *o = &r->objs[i];
+        const Obj *o = &r->objs[i]; if (o->dying > 0 && (o->dying & 2)) continue;     /* dying creatures blink */
         items[n++] = (DrawItem){ flat(g, o) ? -1000 : o->x + o->y, o->x, o->y, o->z + o->lift, o->slot, 0, box_of(g, o), !flat(g, o), (o->flags & 1) && g->spr[o->slot].apx != NULL, g->spr[o->slot].nfr ? o->anim : -1 };
     }
     for (int i = 0; i < r->nwalls && n < 255; i++) {
