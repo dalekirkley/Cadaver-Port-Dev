@@ -458,7 +458,7 @@ static void vm_op(Vm *m, int op) {
         int ok = mode == 0 ? x > v : mode == 1 ? x < v : mode == 2 ? x == v : x != v;      /* modes as in $107aa (cmp d2,d3 = counter - v): 0 gt, 1 lt, 2 eq, 3 ne */
         m->cond = ok ? m->cond + 1 : 0; break; }
     case 0x1b: { int w = m->c[m->p++]; int v = vm_word(m); if (w < MAX_WALLIDX) { g->wallflag[w] = (uint16_t)v; if (v) g->walldoor[w] = 1; } break; }
-    case 0x0a: { int w = m->c[m->p++]; if (w < MAX_WALLIDX && g->wallflag[w]) { g->wallflag[w] = 0; play_sound(g, 0x12); } break; }
+    case 0x0a: { int w = m->c[m->p++]; if (w < MAX_WALLIDX && g->wallflag[w]) { g->wallflag[w] = 0; Room *cr = &g->rooms[g->cur]; int here = 0; for (int k = 0; k < cr->nwalls; k++) if (cr->walls[k].idx == w) here = 1; play_sound(g, here ? 0x12 : 0x2a); } break; }   /* $1013a: the unlock sound only when the wall is one of this room's walls, otherwise $2a (a door opening elsewhere) */
     case 0x1c: { int t = vm_word(m); if (t < g->ntext && g->text[t][0]) { snprintf(g->scroll_str, sizeof g->scroll_str, "%s", g->text[t]); g->scroll_t = SCROLL_TICKS; } break; }
     case 0x2d: { int d = vm_word(m); if (d >= 32768) d -= 65536; change_energy(g, d); break; }
     case 0x46: { int snd = m->c[m->p]; m->p++; play_sound(g, snd); break; }
