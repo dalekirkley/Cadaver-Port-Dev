@@ -316,6 +316,8 @@ static int try_move(Game *g, Room *r, Obj *o, int dx, int dy, int depth) {
 }
 
 /* Index of the object the hero is touching in his facing direction (original $9090: probe one unit ahead with $8264). */
+/* Static scenery (boulders, pillars, walls, blocks: type bit 6, not pushable, no verb of its own): no action menu and no contact sound. */
+static int scenery(const Game *g, const Obj *q) { const Sprite *s = &g->spr[q->slot]; return (s->c & 0x40) && !(s->c & 2) && !s->push && !s->b17 && s->b1d != 8; }
 static int facing_target(const Game *g) {
     const Room *r = &g->rooms[g->cur];
     int dx = ((g->facing & JOY_RIGHT) ? 1 : 0) - ((g->facing & JOY_LEFT) ? 1 : 0);
@@ -324,7 +326,7 @@ static int facing_target(const Game *g) {
     Obj ghost = g->hero; ghost.x += dx; ghost.y += dy; Box gb = box_of(g, &ghost);
     for (int i = 0; i < r->nobj; i++) {
         const Obj *q = &r->objs[i]; if (flat(g, q)) continue;
-        if (overlap(gb, box_of(g, q))) return i;
+        if (overlap(gb, box_of(g, q))) return scenery(g, q) ? -1 : i;
     }
     return -1;
 }
@@ -1000,8 +1002,9 @@ void game_tick(Game *g, int joy) {
             static const uint8_t touch_tab[19] = { 57, 16, 57, 51, 52, 57, 51, 57, 57, 57, 51, 57, 51, 57, 57, 52, 52, 52, 57 };
             Obj gh = *h; gh.x += dx; gh.y += dy; Box gb = box_of(g, &gh); int snd = 0;
             for (int i = 0; i < r->nobj && !snd; i++) { const Obj *q = &r->objs[i]; if (flat(g, q) || q->dying > 0 || !overlap(gb, box_of(g, q))) continue;
+                if (scenery(g, q)) { snd = -1; break; }
                 int ty = g->spr[q->slot].b1d; snd = ty >= 0 && ty < 19 ? touch_tab[ty] : 57; }
-            if (snd != g->touch_snd) { if (g->touch_snd) stop_sound(g, g->touch_snd); if (snd) play_sound(g, snd); } g->touch_snd = snd; g->touch_seen = 1;
+            if (snd < 0) snd = 0; else if (snd != g->touch_snd) { if (g->touch_snd) stop_sound(g, g->touch_snd); if (snd) play_sound(g, snd); } if (snd != g->touch_snd && g->touch_snd) stop_sound(g, g->touch_snd); g->touch_snd = snd; g->touch_seen = 1;
         }
         if (try_move(g, r, h, dx, dy, 0)) { if (pulled) try_move(g, r, pulled, dx, dy, 0); }
         else {
