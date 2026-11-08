@@ -522,7 +522,7 @@ static int try_exit(Game *g, int dx, int dy) {
             x = (((nx - MARGIN) & ~7) == 0) ? nr->sx * 8 - 1 : MARGIN + HERO_FX;
         }
         h->z = (((h->z >> 4) + r->basez - nr->basez) << 4) | (h->z & 15);
-        h->x = x; h->y = y; g->cur = n; if (w->slot < 4) play_sound(g, 0x38); return 1;                 /* door sound only for header doorways (wall slots 0-3; the lever clunk stands in) */
+        h->x = x; h->y = y; g->cur = n; play_sound(g, 0x15); if (((w->slot >> 2) & 1) == 0) play_sound(g, 7); return 1;   /* room change ($6f2a): always sound $15, plus $07 when the wall record's length byte +4 (= slot/4 + 1) is odd */
     }
     return 0;
 }
