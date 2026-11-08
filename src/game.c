@@ -47,7 +47,7 @@ struct Game {
     Obj hero;                         /* hero.slot = 8 */
     int facing, anim_t, moving;
     uint8_t font[46 * 24], fontmap[32]; char **text; int ntext; int day; int energy; int jump_t, jump_z0;
-    int has_scroll, old_data; uint8_t mvstate[1024];   /* 0 = unknown, else movement state + 1 (3 = chase the hero) */  uint8_t scroll_tiles[18 * 32], scroll_map[0x30], font5[46 * 20]; int nexam, nuse, ntake; uint16_t take_pid[512]; int16_t take_gold[512], take_xp[512]; uint8_t counter[256], gflag[256]; uint32_t gbits; int nhid; struct { int room; Obj o; } hid[1024]; int hurt_cd; unsigned rng_seed, rng_last; int ent_tick; uint8_t rs_done[100][16]; uint8_t *aprog[256]; int aprog_len[256], asec[256][4], asec_n[256]; struct { uint8_t has, mode, frame, rev, pc, cnt, rel; } plan[1024]; int want_level; int pull_pid, pull_room; int spawn_pid; int rs_period[100], rs_nb[100]; uint8_t *rs_blk[100][16]; int tm_room, tm_left; uint8_t mv_prog[1024][96]; uint8_t mv_len[1024], mv_step[1024][3], mv_pat[1024]; int lvl1; int nch; uint16_t ch_pid[64], ch_cont[64], ch_key[64]; uint8_t ch_flags[64], ch_trap[64]; int dbg, dbg_verb, dbg_pid, dbg_ran, dbg_execs; unsigned dbg_log[4][3]; unsigned char dbg_tr[48]; int dbg_ntr; int nvm; uint16_t vm_pid[256]; uint8_t vm_len[256], vm_code[256][255]; uint16_t exam_pid[512], exam_text[512], use_pid[512], use_text[512];   /* examine scroll */
+    int has_scroll, old_data; uint8_t mvstate[1024], kill_ok[1024], kill_rew[1024], kill_fl[1024];   /* 0 = unknown, else movement state + 1 (3 = chase the hero) */  uint8_t scroll_tiles[18 * 32], scroll_map[0x30], font5[46 * 20]; int nexam, nuse, ntake; uint16_t take_pid[512]; int16_t take_gold[512], take_xp[512]; uint8_t counter[256], gflag[256]; uint32_t gbits; int nhid; struct { int room; Obj o; } hid[1024]; int hurt_cd; unsigned rng_seed, rng_last; int ent_tick; uint8_t rs_done[100][16]; uint8_t *aprog[256]; int aprog_len[256], asec[256][4], asec_n[256]; struct { uint8_t has, mode, frame, rev, pc, cnt, rel; } plan[1024]; int want_level; int pull_pid, pull_room; int spawn_pid; int rs_period[100], rs_nb[100]; uint8_t *rs_blk[100][16]; int tm_room, tm_left; uint8_t mv_prog[1024][96]; uint8_t mv_len[1024], mv_step[1024][3], mv_pat[1024]; int lvl1; int nch; uint16_t ch_pid[64], ch_cont[64], ch_key[64]; uint8_t ch_flags[64], ch_trap[64]; int dbg, dbg_verb, dbg_pid, dbg_ran, dbg_execs; unsigned dbg_log[4][3]; unsigned char dbg_tr[48]; int dbg_ntr; int nvm; uint16_t vm_pid[256]; uint8_t vm_len[256], vm_code[256][255]; uint16_t exam_pid[512], exam_text[512], use_pid[512], use_text[512];   /* examine scroll */
     int scroll_t; char scroll_str[256]; long score; int map_open, map_px, map_py, status_open; long gold, xp, level; uint8_t visited[100];
     int has_icons; uint8_t icons[20 * 112]; uint16_t slotpos[8][4]; uint8_t verbtab[16];
     int target, nverbs, verbs[8], menu, sel, prev_joy, msg, msg_t, ninv, inv[64], inv_slot[64], inv_mode, inv_sel, inv_hold;     /* verb menu state */
@@ -165,6 +165,8 @@ Game *game_load(const char *path) {
                 if (pid >= 0 && pid < 1024) { g->plan[pid].has = 1; g->plan[pid].mode = (uint8_t)md; g->plan[pid].frame = (uint8_t)fr; g->plan[pid].rev = (uint8_t)rv; g->plan[pid].pc = (uint8_t)pc; g->plan[pid].cnt = (uint8_t)cn; g->plan[pid].rel = (uint8_t)rl; } } }
         if (rd8(f) == 1) { int nm2 = rd16(f); if (nm2 < 0 || nm2 > 1024) nm2 = 0;                    /* movement states (optional, very last section) */
             for (int i = 0; i < nm2; i++) { int pid = rd16(f), st = rd8(f); if (pid >= 0 && pid < 1024) g->mvstate[pid] = (uint8_t)(st + 1); } }
+        if (rd8(f) == 1) { int nk = rd16(f); if (nk < 0 || nk > 1024) nk = 0;                       /* kill rewards (optional, after the movement states) */
+            for (int i = 0; i < nk; i++) { int pid = rd16(f), rw = rd8(f), fl = rd8(f); if (pid >= 0 && pid < 1024) { g->kill_ok[pid] = 1; g->kill_rew[pid] = (uint8_t)rw; g->kill_fl[pid] = (uint8_t)fl; } } }
         g->has_scroll = 1;
         if (g->old_data) { fprintf(stderr, "cadaver: this level file has no animation data; re-run tools/export_level.py\n"); snprintf(g->scroll_str, sizeof g->scroll_str, "OLD LEVEL FILE. RE-RUN THE EXPORT TOOL TO ANIMATE THE CREATURES."); g->scroll_t = SCROLL_TICKS; }
     }
@@ -341,6 +343,9 @@ static void start_dying(Game *g, Obj *q) {
     int fx = -1;
     for (int s = 0; s < 255 && fx < 0; s++) if (g->spr[s].nfr == 8 && g->spr[s].fr[0].w == 32 && g->spr[s].fr[0].h == 16 && g->spr[s].c == 0x44) fx = s;
     q->aon = 0; q->flags &= ~1; q->lift = 0; q->anim = 0; q->dying = fx >= 0 ? 16 : 14;
+    { int pid = q->pid, fl = 0;                                   /* death handler $fc5e: score += part byte 4 (doubled by flag bit 2), sound $21 unless flag bit 1 */
+      if (pid >= 0 && pid < 1024 && g->kill_ok[pid]) { fl = g->kill_fl[pid]; g->score += g->kill_rew[pid] * ((fl & 4) ? 2 : 1); }
+      if (!(fl & 2)) play_sound(g, 0x21); }
     if (fx >= 0) q->slot = fx;
 }
 static void creature_hit_sound(Game *g, const Obj *q) {
@@ -409,7 +414,7 @@ static void vm_op(Vm *m, int op) {
         m->cond = in ? m->cond + 1 : 0; break; }
     case 0x15: { int id = vm_word(m); Obj *q = id >= 0x8000 ? m->self : find_obj(g, id); if (q) q->flags &= ~2; break; }   /* clear placement flag bit 1 ($1030c) */
     case 0x32: { int id = vm_word(m); Obj *q = id >= 0x8000 ? m->self : find_obj(g, id);                            /* post the destroy event (0x17) to an object ($1002c): it is removed */
-        if (q && q != &g->hero) { if (q->dying > 0) break; if (g->spr[q->slot].nfr > 1) start_dying(g, q); else q->life = -1; } break; }   /* creatures die with a sound and a blink */
+        if (q && q != &g->hero) { if (q->dying > 0) break; if ((g->spr[q->slot].nfr > 1 || has_contact_script(g, q)) && !(g->lvl1 && q->slot == 121)) start_dying(g, q); else q->life = -1; } break; }   /* creatures die with a sound and a blink */
     case 0x06: { int n = m->c[m->p++]; g->xp += n; g->gold += n >> 2; play_sound(g, 3); break; }                       /* experience (and a quarter of it as gold) ($ffdc) */
     case 0x4a: { int id = vm_word(m);                                                                              /* reveal a hidden object ($10068) */
         for (int i = 0; i < g->nhid; i++) if (g->hid[i].o.pid == id) {
@@ -699,7 +704,7 @@ static void update_missiles(Game *g) {
                 if (has_contact_script(g, q)) {
                     if (q->hp <= 0) q->hp = CREATURE_HP;
                     q->hp -= ROCK_POWER;
-                    creature_hit_sound(g, q);
+                    creature_hit_sound(g, q);   /* the death itself plays $21 from start_dying */
                     if (q->hp <= 0) start_dying(g, q);
                 }
                 dead = 1; break;

@@ -324,4 +324,17 @@ for pid in range(1024):
     mst.append((pid,pr[q]))
 P('B',1);P('H',len(mst))
 for t in mst:P('HB',*t)
+# kill rewards (optional, after the movement states): death handler $fc5e reads the creature's part (placement + byte +0xc): score += part[4] (x2 if part[6] bit 2),
+# sound $21 unless part[6] bit 1. Measured: room 7 worm adds 40 to the score long at $4a8.
+kr=[]
+for pid in range(1024):
+    pr=L.g6.rec(pid)
+    if len(pr)<16:continue
+    e=L.g2.rec(u16(pr,6))
+    if not e or len(e)<0x30 or not e[0x0c]&4 or e[0x16]!=3:continue
+    q=pr[0xc]
+    if q==0 or q+8>len(pr):continue
+    kr.append((pid,pr[q+4],pr[q+6]))
+P('B',1);P('H',len(kr))
+for t in kr:P('HBB',*t)
 open(out,'wb').write(o);print(len(o),'bytes,',len(exam),'examine texts')
