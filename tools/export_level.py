@@ -337,4 +337,12 @@ for pid in range(1024):
     kr.append((pid,pr[q+4],pr[q+6]))
 P('B',1);P('H',len(kr))
 for t in kr:P('HBB',*t)
+# appearance sounds (optional, after the kill rewards): the display routine $d14a plays sound (type byte +0x1e) unless it is 0xff; measured: the room 7 worm announces itself with sound 0x42.
+sn=[]
+for s_ in range(255):
+    e=L.g2.rec(s_)
+    if not e or len(e)<0x30 or s16(e,0x18)>=0 or not e[0x0c]&4 or e[0x1e]==0xff:continue
+    sn.append((s_,e[0x1e]))
+P('B',1);P('H',len(sn))
+for t in sn:P('BB',*t)
 open(out,'wb').write(o);print(len(o),'bytes,',len(exam),'examine texts')

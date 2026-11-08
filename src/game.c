@@ -47,7 +47,7 @@ struct Game {
     Obj hero;                         /* hero.slot = 8 */
     int facing, anim_t, moving;
     uint8_t font[46 * 24], fontmap[32]; char **text; int ntext; int day; int energy; int jump_t, jump_z0;
-    int has_scroll, old_data; uint8_t mvstate[1024], kill_ok[1024], kill_rew[1024], kill_fl[1024];   /* 0 = unknown, else movement state + 1 (3 = chase the hero) */  uint8_t scroll_tiles[18 * 32], scroll_map[0x30], font5[46 * 20]; int nexam, nuse, ntake; uint16_t take_pid[512]; int16_t take_gold[512], take_xp[512]; uint8_t counter[256], gflag[256]; uint32_t gbits; int nhid; struct { int room; Obj o; } hid[1024]; int hurt_cd, touch_snd; unsigned rng_seed, rng_last; int ent_tick; uint8_t rs_done[100][16]; uint8_t *aprog[256]; int aprog_len[256], asec[256][4], asec_n[256]; struct { uint8_t has, mode, frame, rev, pc, cnt, rel; } plan[1024]; int want_level; int pull_pid, pull_room; int spawn_pid; int rs_period[100], rs_nb[100]; uint8_t *rs_blk[100][16]; int tm_room, tm_left; uint8_t mv_prog[1024][96]; uint8_t mv_len[1024], mv_step[1024][3], mv_pat[1024]; int lvl1; int nch; uint16_t ch_pid[64], ch_cont[64], ch_key[64]; uint8_t ch_flags[64], ch_trap[64]; int dbg, dbg_verb, dbg_pid, dbg_ran, dbg_execs; unsigned dbg_log[4][3]; unsigned char dbg_tr[48]; int dbg_ntr; int nvm; uint16_t vm_pid[256]; uint8_t vm_len[256], vm_code[256][255]; uint16_t exam_pid[512], exam_text[512], use_pid[512], use_text[512];   /* examine scroll */
+    int has_scroll, old_data; uint8_t spawn_snd[256], mvstate[1024], kill_ok[1024], kill_rew[1024], kill_fl[1024];   /* 0 = unknown, else movement state + 1 (3 = chase the hero) */  uint8_t scroll_tiles[18 * 32], scroll_map[0x30], font5[46 * 20]; int nexam, nuse, ntake; uint16_t take_pid[512]; int16_t take_gold[512], take_xp[512]; uint8_t counter[256], gflag[256]; uint32_t gbits; int nhid; struct { int room; Obj o; } hid[1024]; int hurt_cd, touch_snd; unsigned rng_seed, rng_last; int ent_tick; uint8_t rs_done[100][16]; uint8_t *aprog[256]; int aprog_len[256], asec[256][4], asec_n[256]; struct { uint8_t has, mode, frame, rev, pc, cnt, rel; } plan[1024]; int want_level; int pull_pid, pull_room; int spawn_pid; int rs_period[100], rs_nb[100]; uint8_t *rs_blk[100][16]; int tm_room, tm_left; uint8_t mv_prog[1024][96]; uint8_t mv_len[1024], mv_step[1024][3], mv_pat[1024]; int lvl1; int nch; uint16_t ch_pid[64], ch_cont[64], ch_key[64]; uint8_t ch_flags[64], ch_trap[64]; int dbg, dbg_verb, dbg_pid, dbg_ran, dbg_execs; unsigned dbg_log[4][3]; unsigned char dbg_tr[48]; int dbg_ntr; int nvm; uint16_t vm_pid[256]; uint8_t vm_len[256], vm_code[256][255]; uint16_t exam_pid[512], exam_text[512], use_pid[512], use_text[512];   /* examine scroll */
     int scroll_t; char scroll_str[256]; long score; int map_open, map_px, map_py, status_open; long gold, xp, level; uint8_t visited[100];
     int has_icons; uint8_t icons[20 * 112]; uint16_t slotpos[8][4]; uint8_t verbtab[16];
     int target, nverbs, verbs[8], menu, sel, prev_joy, msg, msg_t, ninv, inv[64], inv_slot[64], inv_mode, inv_sel, inv_hold;     /* verb menu state */
@@ -167,6 +167,8 @@ Game *game_load(const char *path) {
             for (int i = 0; i < nm2; i++) { int pid = rd16(f), st = rd8(f); if (pid >= 0 && pid < 1024) g->mvstate[pid] = (uint8_t)(st + 1); } }
         if (rd8(f) == 1) { int nk = rd16(f); if (nk < 0 || nk > 1024) nk = 0;                       /* kill rewards (optional, after the movement states) */
             for (int i = 0; i < nk; i++) { int pid = rd16(f), rw = rd8(f), fl = rd8(f); if (pid >= 0 && pid < 1024) { g->kill_ok[pid] = 1; g->kill_rew[pid] = (uint8_t)rw; g->kill_fl[pid] = (uint8_t)fl; } } }
+        if (rd8(f) == 1) { int ns = rd16(f); if (ns < 0 || ns > 256) ns = 0;                       /* appearance sounds (optional): type byte +0x1e, played when an object is shown ($d166) */
+            for (int i = 0; i < ns; i++) { int sl = rd8(f), sn = rd8(f); if (sl >= 0 && sl < 256) g->spawn_snd[sl] = (uint8_t)(sn + 1); } }
         g->has_scroll = 1;
         if (g->old_data) { fprintf(stderr, "cadaver: this level file has no animation data; re-run tools/export_level.py\n"); snprintf(g->scroll_str, sizeof g->scroll_str, "OLD LEVEL FILE. RE-RUN THE EXPORT TOOL TO ANIMATE THE CREATURES."); g->scroll_t = SCROLL_TICKS; }
     }
@@ -381,12 +383,12 @@ static void vm_op(Vm *m, int op) {
         Room *cr = &g->rooms[g->cur]; Obj o2; int got = 0;
         int skey = (x << 8 | y) + 1;                                     /* one placement can be spawned several times at different spots (3 bats in room 38); the same spot again is a repeat */
         for (int i = 0; i < cr->nobj; i++) if (cr->objs[i].pid == id) { if (cr->objs[i].skey == skey || cr->objs[i].skey == 0 || cr->nobj >= cr->ocap - 1) return; if (!got) { o2 = cr->objs[i]; got = 1; } }
-        if (got) { o2.skey = skey; o2.flags &= ~0x90; o2.x = x; o2.y = y; o2.z = (z >= 0x40 && !(g->lvl1 && o2.slot == 119)) ? 0 : z; o2.stage = 0; o2.mpc = o2.mwait = o2.mstop = 0; memset(o2.mc, 0, sizeof o2.mc); cr->objs[cr->nobj++] = o2; break; }
+        if (got) { o2.skey = skey; o2.flags &= ~0x90; o2.x = x; o2.y = y; o2.z = (z >= 0x40 && !(g->lvl1 && o2.slot == 119)) ? 0 : z; o2.stage = 0; o2.mpc = o2.mwait = o2.mstop = 0; memset(o2.mc, 0, sizeof o2.mc); cr->objs[cr->nobj++] = o2; if (g->spawn_snd[o2.slot & 255]) play_sound(g, g->spawn_snd[o2.slot & 255] - 1); break; }
         for (int i = 0; i < g->nhid && !got; i++) if (g->hid[i].o.pid == id) { o2 = g->hid[i].o; g->hid[i] = g->hid[--g->nhid]; got = 1; }
         for (int rm = 0; rm < 100 && !got; rm++) { Room *r2 = &g->rooms[rm]; if (!r2->valid || rm == g->cur) continue;
             for (int i = 0; i < r2->nobj; i++) if (r2->objs[i].pid == id) { o2 = r2->objs[i]; r2->objs[i] = r2->objs[--r2->nobj]; got = 1; break; } }
         if (!got) return;
-        o2.flags &= ~0x90; o2.x = x; o2.y = y; o2.z = (z >= 0x40 && !(g->lvl1 && o2.slot == 119)) ? 0 : z; o2.anim = g->spr[o2.slot].nfr >= 10 ? 8 : 0; o2.atick = 8; o2.stage = 0; o2.skey = skey; cr->objs[cr->nobj++] = o2; break; }
+        o2.flags &= ~0x90; o2.x = x; o2.y = y; o2.z = (z >= 0x40 && !(g->lvl1 && o2.slot == 119)) ? 0 : z; o2.anim = g->spr[o2.slot].nfr >= 10 ? 8 : 0; o2.atick = 8; o2.stage = 0; o2.skey = skey; cr->objs[cr->nobj++] = o2; if (g->spawn_snd[o2.slot & 255]) play_sound(g, g->spawn_snd[o2.slot & 255] - 1); break; }
     case 0x25: { int n = m->c[m->p], dx = m->c[m->p + 1], dy = m->c[m->p + 2], dz = m->c[m->p + 3]; m->p += 4; play_sound(g, 0x15);   /* teleport the hero into room n at an offset from its origin ($10546) */
         if (n < 100 && g->rooms[n].valid) { g->cur = n; g->hero.x = MARGIN + HERO_FX + dx; g->hero.y = MARGIN + HERO_FY + dy; g->hero.z = dz; }
         break; }
@@ -420,7 +422,7 @@ static void vm_op(Vm *m, int op) {
     case 0x4a: { int id = vm_word(m);                                                                              /* reveal a hidden object ($10068) */
         for (int i = 0; i < g->nhid; i++) if (g->hid[i].o.pid == id) {
             Room *r2 = &g->rooms[g->hid[i].room]; Obj o2 = g->hid[i].o; o2.flags &= ~0x90;
-            r2->objs[r2->nobj++] = o2; g->hid[i] = g->hid[--g->nhid]; break; }
+            r2->objs[r2->nobj++] = o2; if (r2 == &g->rooms[g->cur] && g->spawn_snd[o2.slot & 255]) play_sound(g, g->spawn_snd[o2.slot & 255] - 1); g->hid[i] = g->hid[--g->nhid]; break; }
         break; }
     case 0x1a: { int id = vm_word(m); Obj *q = id >= 0x8000 ? m->self : find_obj(g, id); if (q && q != &g->hero) q->life = -1; break; }   /* despawn an object ($fea4) */
     case 0x3a: { int n = m->c[m->p];                                  /* run the block only if exactly n conditions held ($10236); layout as 0e */
