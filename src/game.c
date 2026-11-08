@@ -226,7 +226,8 @@ static void play_sound(Game *g, int snd) {
     if (snd < 0 || snd >= 69) return;
     for (int i = 0; i < 4; i++) {
         int n = SND_IDX[snd][i][1]; if (!n) continue;
-        int k = i; if (g->sq[k].mv >= 0 && g->sq[k].mv != k) g->voice[g->sq[k].mv].step = 0;
+        int k = i;
+        if (snd == 0 && (g->sq[k].ev || g->voice[k].step) && g->voice[k].snd != 1) continue;   /* footsteps are lowest priority: they never cut another sound off its channel (the door sound on channel 0) */
         g->sq[k].ev = &SND_EV[SND_IDX[snd][i][0]]; g->sq[k].n = n; g->sq[k].i = 0; g->sq[k].t = 0; g->sq[k].mv = -1; g->sq[k].snd = snd; g->sq[k].el = 0;
     }
 }
