@@ -47,7 +47,7 @@ struct Game {
     Obj hero;                         /* hero.slot = 8 */
     int facing, anim_t, moving;
     uint8_t font[46 * 24], fontmap[32]; char **text; int ntext; int day; int energy; int jump_t, jump_z0;
-    int has_scroll, old_data; uint8_t cons_ok[1024], cons_eff[1024], cons_amt[1024], cons_left[1024], cons_fl[1024]; unsigned aud_seed; int poison, poison_t, prot, prot_amt, atk_mask; uint8_t cre_hp[1024], cre_imm[1024], cre_fl6[1024], cre_ok[1024], spawn_snd[256], mvstate[1024], kill_ok[1024], kill_rew[1024], kill_fl[1024];   /* 0 = unknown, else movement state + 1 (3 = chase the hero) */  uint8_t scroll_tiles[18 * 32], scroll_map[0x30], font5[46 * 20]; int nexam, nuse, ntake; uint16_t take_pid[512]; int16_t take_gold[512], take_xp[512]; uint8_t counter[256], gflag[256]; uint32_t gbits; int nhid; struct { int room; Obj o; } hid[1024]; int hurt_cd, touch_snd, touch_seen; unsigned rng_seed, rng_last; int ent_tick; uint8_t rs_done[100][16]; uint8_t *aprog[256]; int aprog_len[256], asec[256][4], asec_n[256]; struct { uint8_t has, mode, frame, rev, pc, cnt, rel; } plan[1024]; int want_level; int pull_pid, pull_room; int spawn_pid; int rs_period[100], rs_nb[100]; uint8_t *rs_blk[100][16]; int tm_room, tm_left; uint8_t mv_prog[1024][96]; uint8_t mv_len[1024], mv_step[1024][3], mv_pat[1024]; int lvl1; int nch; uint16_t ch_pid[64], ch_cont[64], ch_key[64]; uint8_t ch_flags[64], ch_trap[64]; int dbg, dbg_verb, dbg_pid, dbg_ran, dbg_execs; unsigned dbg_log[4][3]; unsigned char dbg_tr[48]; int dbg_ntr; int nvm; uint16_t vm_pid[256]; uint8_t vm_len[256], vm_code[256][255]; uint16_t exam_pid[512], exam_text[512], use_pid[512], use_text[512];   /* examine scroll */
+    int has_scroll, old_data; uint8_t spl_ok[1024], spl_no[1024], spl_pow[1024], spl_fl[1024], spl_chg[1024]; uint8_t cons_ok[1024], cons_eff[1024], cons_amt[1024], cons_left[1024], cons_fl[1024]; int flash_t, tmr_t; uint8_t tmr[64]; unsigned aud_seed; int poison, poison_t, prot, prot_amt, atk_mask; uint8_t cre_hp[1024], cre_imm[1024], cre_fl6[1024], cre_ok[1024], spawn_snd[256], mvstate[1024], kill_ok[1024], kill_rew[1024], kill_fl[1024];   /* 0 = unknown, else movement state + 1 (3 = chase the hero) */  uint8_t scroll_tiles[18 * 32], scroll_map[0x30], font5[46 * 20]; int nexam, nuse, ntake; uint16_t take_pid[512]; int16_t take_gold[512], take_xp[512]; uint8_t counter[256], gflag[256]; uint32_t gbits; int nhid; struct { int room; Obj o; } hid[1024]; int hurt_cd, touch_snd, touch_seen; unsigned rng_seed, rng_last; int ent_tick; uint8_t rs_done[100][16]; uint8_t *aprog[256]; int aprog_len[256], asec[256][4], asec_n[256]; struct { uint8_t has, mode, frame, rev, pc, cnt, rel; } plan[1024]; int want_level; int pull_pid, pull_room; int spawn_pid; int rs_period[100], rs_nb[100]; uint8_t *rs_blk[100][16]; int tm_room, tm_left; uint8_t mv_prog[1024][96]; uint8_t mv_len[1024], mv_step[1024][3], mv_pat[1024]; int lvl1; int nch; uint16_t ch_pid[64], ch_cont[64], ch_key[64]; uint8_t ch_flags[64], ch_trap[64]; int dbg, dbg_verb, dbg_pid, dbg_ran, dbg_execs; unsigned dbg_log[4][3]; unsigned char dbg_tr[48]; int dbg_ntr; int nvm; uint16_t vm_pid[256]; uint8_t vm_len[256], vm_code[256][255]; uint16_t exam_pid[512], exam_text[512], use_pid[512], use_text[512];   /* examine scroll */
     int scroll_t; char scroll_str[256]; long score; int map_open, map_px, map_py, status_open; long gold, xp, level; uint8_t visited[100];
     int has_icons; uint8_t icons[20 * 112]; uint16_t slotpos[8][4]; uint8_t verbtab[16];
     int target, nverbs, verbs[8], menu, sel, prev_joy, msg, msg_t, ninv, inv[64], inv_slot[64], inv_mode, inv_sel, inv_hold;     /* verb menu state */
@@ -173,6 +173,8 @@ Game *game_load(const char *path) {
             for (int i = 0; i < nc; i++) { int pid = rd16(f), hp = rd8(f), im = rd8(f), f6 = rd8(f); if (pid >= 0 && pid < 1024) { g->cre_ok[pid] = 1; g->cre_hp[pid] = (uint8_t)hp; g->cre_imm[pid] = (uint8_t)im; g->cre_fl6[pid] = (uint8_t)f6; } } }
         if (rd8(f) == 1) { int nn = rd16(f); if (nn < 0 || nn > 1024) nn = 0;                       /* consumables (optional): effect, amount, doses, flags of class-2 objects */
             for (int i = 0; i < nn; i++) { int pid = rd16(f), ef = rd8(f), am = rd8(f), us = rd8(f), fl = rd8(f); if (pid >= 0 && pid < 1024) { g->cons_ok[pid] = 1; g->cons_eff[pid] = (uint8_t)ef; g->cons_amt[pid] = (uint8_t)am; g->cons_left[pid] = (uint8_t)us; g->cons_fl[pid] = (uint8_t)fl; } } }
+        if (rd8(f) == 1) { int nn = rd16(f); if (nn < 0 || nn > 1024) nn = 0;                       /* spells (optional): number, power, flags, charges of class-1 items */
+            for (int i = 0; i < nn; i++) { int pid = rd16(f), no = rd8(f), pw = rd8(f), fl = rd8(f), ch = rd8(f); if (pid >= 0 && pid < 1024) { g->spl_ok[pid] = 1; g->spl_no[pid] = (uint8_t)no; g->spl_pow[pid] = (uint8_t)pw; g->spl_fl[pid] = (uint8_t)fl; g->spl_chg[pid] = (uint8_t)ch; } } }
         g->has_scroll = 1;
         if (g->old_data) { fprintf(stderr, "cadaver: this level file has no animation data; re-run tools/export_level.py\n"); snprintf(g->scroll_str, sizeof g->scroll_str, "OLD LEVEL FILE. RE-RUN THE EXPORT TOOL TO ANIMATE THE CREATURES."); g->scroll_t = SCROLL_TICKS; }
     }
@@ -566,6 +568,30 @@ static void build_verbs(Game *g) {
 
 static void say(Game *g, int text_id) { g->msg = text_id; g->msg_t = 50; }
 
+static int held_class(const Game *g);
+/* Spells ($ed06): a held class-1 item. Part +7: 0 = spent (sound $11), 1 = cast at once and used up, 2 = cast on the object in front of the hero. */
+static void start_flash(Game *g) { g->flash_t = 16; }
+static void cast_spell(Game *g, int target) {
+    int pid = g->inv_hold; Room *r = &g->rooms[g->cur];
+    if (pid < 0 || pid >= 1024 || !g->spl_ok[pid]) { play_sound(g, 6); return; }
+    if (g->spl_fl[pid] & 0x80) { say(g, 37); return; }                                  /* you do not have the wisdom yet */
+    if (g->spl_chg[pid] == 0) { play_sound(g, 0x11); return; }
+    int no = g->spl_no[pid], pw = g->spl_pow[pid];
+    if (g->spl_chg[pid] == 2) {
+        if (target < 0) { say(g, 41); return; }                                         /* "you must cast this spell on a specific object" */
+        const Sprite *ts = &g->spr[r->objs[target].slot]; int done = 0;
+        if (no == 15 && ts->b16 == 8) { for (int i = 0; i < g->nch; i++) if (g->ch_pid[i] == r->objs[target].pid && g->ch_trap[i]) { g->ch_trap[i] = 0; say(g, 52); done = 1; } }
+        play_sound(g, 6);
+        if (!done) { say(g, 47); return; }                                              /* "you wasted that spell" */
+    } else {
+        play_sound(g, 6);
+        if (no == 2) { g->tmr[0x22] = (uint8_t)pw; start_flash(g); }                    /* services $30 (start timer) and $1c (flash) */
+        else if (no == 22) { g->tmr[0x26] = (uint8_t)pw; start_flash(g); }
+    }
+    for (int i = 0; i < g->ninv; i++) if (g->inv[i] == pid) { inv_remove(g, i); break; }   /* the scroll or stone is used up and no longer held */
+    g->inv_hold = -1;
+}
+
 static void exec_verb(Game *g, int verb) {
     if (verb == 0xa && g->target >= 0) { g->pull_pid = g->rooms[g->cur].objs[g->target].pid; g->pull_room = g->cur; return; }   /* MOVE: walking away drags this object behind the hero */
     Room *r = &g->rooms[g->cur];
@@ -586,6 +612,7 @@ static void exec_verb(Game *g, int verb) {
         memmove(&r->objs[g->target], &r->objs[g->target + 1], (size_t)(r->nobj - g->target - 1) * sizeof(Obj)); r->nobj--;
         g->target = -1; g->nverbs = 0; return;
     }
+    if (verb == 6 && held_class(g) == 1) { cast_spell(g, g->target); return; }          /* use with a spell held: cast it on this object */
     if (verb == 8 && g->spr[r->objs[g->target].slot].b16 == 7 && g->has_scroll) { g->status_open = 1; return; }     /* the diary: health, gold, XP, level, % complete */
     if (verb == 0xb && g->has_scroll) {                                               /* examine: the object's description on a parchment scroll */
         int pid = r->objs[g->target].pid;
@@ -935,7 +962,7 @@ void game_tick(Game *g, int joy) {
     if (g->menu) {                                                                     /* verb menu: the hero stands still */
         if (g->target < 0 || g->nverbs == 0) g->menu = 0;
         else { if (fire_edge) { g->menu = 0; play_sound(g, 0x37); exec_verb(g, g->verbs[g->sel]); } else if (new_dirs) { int os = g->sel; g->sel = move_sel(g, new_dirs); if (g->sel != os) play_sound(g, 2); } joy &= ~15; }
-    } else if (fire_edge && held_class(g) == 1) { play_sound(g, 6);                /* a held spell: the cast sound ($ed06); its effects are not decoded yet */
+    } else if (fire_edge && held_class(g) == 1) { cast_spell(g, facing_target(g));   /* a held spell ($ed06) */
     } else if (fire_edge && held_ranged(g)) { fire_weapon(g); joy &= ~15;
     } else if (fire_edge && g->target >= 0 && g->nverbs > 0) { g->menu = 1; g->sel = 0; joy &= ~15; }
     else if (fire_edge && g->target < 0 && !g->jump_t && hero_grounded(g, r)) { g->jump_t = 1; g->jump_z0 = h->z; }    /* fire with nothing in front: jump */
@@ -943,6 +970,8 @@ void game_tick(Game *g, int joy) {
     int dy = ((joy & JOY_DOWN) ? 1 : 0) - ((joy & JOY_UP) ? 1 : 0);
     g->tickno++;
     if (g->hurt_cd > 0) g->hurt_cd--;
+    if (g->flash_t > 0) g->flash_t--;
+    if (++g->tmr_t >= 165) { g->tmr_t = 0; for (int i = 0; i < 64; i++) if (g->tmr[i] && --g->tmr[i] == 0) say(g, 26); }   /* timers count down once per 330 video frames; expiry shows "THE EFFECT WEARS OFF" */
     if (g->poison && ++g->poison_t >= 165) { g->poison_t = 0; change_energy(g, -g->poison); }      /* poison costs its strength every 330 video frames (measured) */
     for (int i = 0; i < r->nobj; i++) { Obj *d = &r->objs[i]; if (d->dying <= 0) continue;
         if (g->spr[d->slot].nfr == 8 && g->spr[d->slot].c == 0x44) d->anim = (16 - d->dying) / 2 > 7 ? 7 : (16 - d->dying) / 2;
@@ -1418,6 +1447,14 @@ void game_render(const Game *g, uint32_t *fb) {
     }
     if (g->inv_mode && g->ninv) draw_rucksack(g, fb);
     else if (g->hud) draw_energy(g, fb);
+    if (g->flash_t > 0) {                                            /* spell flash: the same black/white checker flicker as the dragon's lightning, 16 ticks */
+        static const uint8_t pat2[16] = { 1, 0, 0, 1, 1, 0, 0, 0, 1, 1, 1, 0, 0, 1, 1, 0 }; int ph = 16 - g->flash_t;
+        for (int i = 0; i < SCREEN_W * SCREEN_H; i++) {
+            uint32_t px = fb[i]; int r = px & 255, gg = (px >> 8) & 255, b = (px >> 16) & 255, best = 0, bd = 1 << 30;
+            for (int k = 0; k < 16; k++) { int dr = r - g->pal[k][0], dg = gg - g->pal[k][1], db = b - g->pal[k][2], d = dr * dr + dg * dg + db * db; if (d < bd) { bd = d; best = k; } }
+            fb[i] = ((pat2[best] ^ (ph & 1)) ? 0xFFFFFFFFu : 0xFF000000u);
+        }
+    }
     if (g->lvl1 && g->cur == 36) {                                   /* dragon room lightning (the dragon's behaviour routine $96364 calls service $1c = palette flash: the 16 colours alternate white/black in a checker pattern for 32 video frames = 16 ticks, then the routine costs the hero 20 energy: BP on $10836 showed -20 at frames 3232, 3335, 3654 for calls at 3200, 3303, 3622); calls at 0, 103, 422, 525 video frames after load = ticks 0, 52 of every 211 */
         int t = (g->tickno - g->ent_tick) % 211, ph = t < 16 ? t : (t >= 52 && t < 68) ? t - 52 : -1;
         if (ph >= 0) {

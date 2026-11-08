@@ -371,4 +371,16 @@ for pid in range(1024):
     cs.append((pid,pr[q],pr[q+1],pr[q+2],pr[q+3]))
 P('B',1);P('H',len(cs))
 for t in cs:P('HBBBB',*t)
+# spells (optional, after the consumables): class byte +0x16 == 1; part byte 0 = spell number, +1 = power, +3 bit 7 = not yet understood, +7 = charges ($ed06)
+sp=[]
+for pid in range(1024):
+    pr=L.g6.rec(pid)
+    if len(pr)<16:continue
+    e=L.g2.rec(u16(pr,6))
+    if not e or len(e)<0x30 or e[0x16]!=1:continue
+    q=pr[0xc]
+    if q==0 or q+8>len(pr):continue
+    sp.append((pid,pr[q],pr[q+1],pr[q+3],pr[q+7]))
+P('B',1);P('H',len(sp))
+for t in sp:P('HBBBB',*t)
 open(out,'wb').write(o);print(len(o),'bytes,',len(exam),'examine texts')
