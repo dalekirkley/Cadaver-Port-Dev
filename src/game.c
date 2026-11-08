@@ -840,7 +840,7 @@ void game_tick(Game *g, int joy) {
                 int k = (g->tickno % 36 + 34) % 36 / 2, dx = 0, dy = 0; if (k < 15) { dx = off[k][0]; dy = off[k][1]; }
                 c->x = c->vx + dx / 2; c->lift = dx / 2 - dy; }   /* screen: dx = 2*dx_world, dy = dx_world - dz */
             continue; }   /* dragon flame: 4-frame loop, 3 ticks per frame (emulator, room 36) */
-        if (g->spr[c->slot].nfr < 10) continue;
+        if (!g->lvl1 || (c->slot != 116 && c->slot != 112) || g->spr[c->slot].nfr < 10) continue;   /* only the level 1 water lurker and worm have these hand sequences; walkers must stay (they used to vanish after 66 ticks) */
         if (g->lvl1 && c->slot == 112 && g->spr[112].nfr >= 16) {          /* worm: 78-tick cycle read off the emulator: hop (frame 15, arc), crawl (frames 12/13 alternating), rest (frame 14); gone after 3 cycles */
             static const int arc[10] = { 8, 18, 33, 46, 54, 52, 42, 28, 12, 0 };
             int t = (c->stage + 60) % 78; c->stage = c->home == g->cur ? t - 59 : c->stage + 1;   /* a fresh worm starts in its rest phase */
