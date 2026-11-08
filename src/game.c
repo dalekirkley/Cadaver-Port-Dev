@@ -428,7 +428,7 @@ static void vm_op(Vm *m, int op) {
     case 0x26: { int n = m->c[m->p], v = m->c[m->p + 1]; m->p += 2; g->counter[n] = (uint8_t)v; break; }              /* set counter n ($1078c) */
     case 0x30: m->cond = m->cond == 0; vm_op(m, 0x0e); break;                                              /* block runs when the condition FAILED ($10222) */
     case 0x31: { int i = m->c[m->p], v = m->c[m->p + 1]; m->p += 2; g->gflag[i] = (uint8_t)v; break; }              /* global flag byte ($108d8) */
-    case 0x4c: { int n = m->c[m->p++]; m->cond = (g->gbits >> (n & 31) & 1) ? m->cond + 1 : 0; break; }            /* global bit n set ($108cc) */
+    case 0x4c: { int n = m->c[m->p++]; m->cond = (g->prot >> (n & 7) & 1) ? m->cond + 1 : 0; break; }            /* global bit n set ($108cc) */
     case 0x2f: { int id = vm_word(m); Obj *q = id >= 0x8000 ? m->self : find_obj(g, id); m->cond = q ? m->cond + 1 : 0; break; }   /* object exists ($108bc) */
     case 0x2b: { int id = vm_word(m); int rm = m->c[m->p++]; if (rm == 0xfe) rm = g->cur; int in = 0;                /* object is in room rm ($103a8) */
         for (int r2 = 0; r2 < 100 && !in; r2++) { Room *q = &g->rooms[r2]; if (!q->valid) continue; for (int i = 0; i < q->nobj; i++) if (q->objs[i].pid == id) { in = (r2 == rm); r2 = 100; break; } }
@@ -984,7 +984,7 @@ void game_tick(Game *g, int joy) {
     for (int i = 0; i < r->nobj; i++) { Obj *c = &r->objs[i]; int sl = c->slot; if (g->lvl1 ? (sl < 113 || sl > 119 || sl == 116) : !(c->pid >= 0 && c->pid < 1024 && g->mv_len[c->pid])) continue;      /* path-following creatures */
         creature_move(g, r, c);
 }
-    if (g->lvl1 && g->cur == 36) { int t = (g->tickno - g->ent_tick) % 211; if ((t == 16 || t == 68) && !((g->gbits >> 3) & 1)) change_energy(g, -20); }   /* the dragon's lightning hurts after the flash (unless global bit 3 $984 is set) */
+    if (g->lvl1 && g->cur == 36) { int t = (g->tickno - g->ent_tick) % 211; if ((t == 16 || t == 68) && !((g->prot >> 3) & 1)) change_energy(g, -20); }   /* the dragon's lightning hurts after the flash (unless global bit 3 $984 is set) */
     if (g->hurt_cd == 0) {                                  /* contact scripts (event 9 with the hero): creatures, fires, spikes. Original posts it every tick of contact; measured in the emulator: a spider costs 2 energy every tick (1 per video frame), no cooldown */
         Box hb = box_of(g, h);
         for (int i = 0; i < r->nobj && g->hurt_cd == 0; i++) {
