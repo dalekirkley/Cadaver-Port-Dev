@@ -47,7 +47,7 @@ struct Game {
     Obj hero;                         /* hero.slot = 8 */
     int facing, anim_t, moving;
     uint8_t font[46 * 24], fontmap[32]; char **text; int ntext; int day; int energy; int jump_t, jump_z0;
-    int has_scroll; uint8_t scroll_tiles[18 * 32], scroll_map[0x30], font5[46 * 20]; int nexam, nuse, ntake; uint16_t take_pid[512]; int16_t take_gold[512], take_xp[512]; uint8_t counter[256], gflag[256]; uint32_t gbits; int nhid; struct { int room; Obj o; } hid[1024]; int hurt_cd; unsigned rng_seed, rng_last; int ent_tick; uint8_t rs_done[100][16]; uint8_t *aprog[256]; int aprog_len[256], asec[256][4], asec_n[256]; struct { uint8_t has, mode, frame, rev, pc, cnt, rel; } plan[1024]; int want_level; int pull_pid, pull_room; int spawn_pid; int rs_period[100], rs_nb[100]; uint8_t *rs_blk[100][16]; int tm_room, tm_left; uint8_t mv_prog[1024][96]; uint8_t mv_len[1024], mv_step[1024][3], mv_pat[1024]; int lvl1; int nch; uint16_t ch_pid[64], ch_cont[64], ch_key[64]; uint8_t ch_flags[64], ch_trap[64]; int dbg, dbg_verb, dbg_pid, dbg_ran, dbg_execs; unsigned dbg_log[4][3]; unsigned char dbg_tr[48]; int dbg_ntr; int nvm; uint16_t vm_pid[256]; uint8_t vm_len[256], vm_code[256][255]; uint16_t exam_pid[512], exam_text[512], use_pid[512], use_text[512];   /* examine scroll */
+    int has_scroll, old_data; uint8_t scroll_tiles[18 * 32], scroll_map[0x30], font5[46 * 20]; int nexam, nuse, ntake; uint16_t take_pid[512]; int16_t take_gold[512], take_xp[512]; uint8_t counter[256], gflag[256]; uint32_t gbits; int nhid; struct { int room; Obj o; } hid[1024]; int hurt_cd; unsigned rng_seed, rng_last; int ent_tick; uint8_t rs_done[100][16]; uint8_t *aprog[256]; int aprog_len[256], asec[256][4], asec_n[256]; struct { uint8_t has, mode, frame, rev, pc, cnt, rel; } plan[1024]; int want_level; int pull_pid, pull_room; int spawn_pid; int rs_period[100], rs_nb[100]; uint8_t *rs_blk[100][16]; int tm_room, tm_left; uint8_t mv_prog[1024][96]; uint8_t mv_len[1024], mv_step[1024][3], mv_pat[1024]; int lvl1; int nch; uint16_t ch_pid[64], ch_cont[64], ch_key[64]; uint8_t ch_flags[64], ch_trap[64]; int dbg, dbg_verb, dbg_pid, dbg_ran, dbg_execs; unsigned dbg_log[4][3]; unsigned char dbg_tr[48]; int dbg_ntr; int nvm; uint16_t vm_pid[256]; uint8_t vm_len[256], vm_code[256][255]; uint16_t exam_pid[512], exam_text[512], use_pid[512], use_text[512];   /* examine scroll */
     int scroll_t; char scroll_str[256]; long score; int map_open, map_px, map_py, status_open; long gold, xp, level; uint8_t visited[100];
     int has_icons; uint8_t icons[20 * 112]; uint16_t slotpos[8][4]; uint8_t verbtab[16];
     int target, nverbs, verbs[8], menu, sel, prev_joy, msg, msg_t, ninv, inv[64], inv_slot[64], inv_mode, inv_sel, inv_hold;     /* verb menu state */
@@ -153,7 +153,8 @@ Game *game_load(const char *path) {
             if (hw > 0 && hh > 0 && hw <= SCREEN_W && hh <= SCREEN_H) { g->held_ov = malloc((size_t)hw * hh * 4); if (g->held_ov && rd(f, g->held_ov, (size_t)hw * hh * 4)) { g->held_x = hx; g->held_y = hy; g->held_w = hw; g->held_h = hh; } else { free(g->held_ov); g->held_ov = NULL; } } }
         if (rd8(f) == 1) { int nf = rd16(f); if (nf < 0 || nf > 255) nf = 0;                           /* frame-0 image offsets (optional, last section): slot, dx, dy of the first image record */
             for (int i = 0; i < nf; i++) { int sl = rd8(f); int dx = rds16(f), dy = rds16(f); g->spr[sl].f0x = dx; g->spr[sl].f0y = dy; } }
-        if (rd8(f) == 1) { int np = rd16(f); if (np < 0 || np > 255) np = 0;                          /* animation programs (optional, last section) */
+        g->old_data = 1;
+        if (rd8(f) == 1) { g->old_data = 0; int np = rd16(f); if (np < 0 || np > 255) np = 0;                          /* animation programs (optional, last section) */
             for (int i = 0; i < np; i++) { int sl = rd8(f), ln = rd16(f); if (ln < 0 || ln > 510) break; uint8_t *b = malloc((size_t)ln + 2);
                 if (!b || !rd(f, b, (size_t)ln)) { free(b); break; } free(g->aprog[sl]); g->aprog[sl] = b; g->aprog_len[sl] = ln / 2;
                 int n = 0, st[4] = { 0 }; for (int k = 0; k < ln / 2; k++) { int t = b[2 * k], a = b[2 * k + 1]; if (t == 0xfc) { int dup = 0; for (int j = 0; j < n; j++) if (st[j] == a) dup = 1; if (!dup && n < 4) st[n++] = a; } }
@@ -163,6 +164,7 @@ Game *game_load(const char *path) {
             int nq = rd16(f); for (int i = 0; i < nq; i++) { int pid = rd16(f), md = rd8(f), fr = rd8(f), rv = rd8(f), pc = rd8(f), cn = rd8(f), rl = rd8(f);
                 if (pid >= 0 && pid < 1024) { g->plan[pid].has = 1; g->plan[pid].mode = (uint8_t)md; g->plan[pid].frame = (uint8_t)fr; g->plan[pid].rev = (uint8_t)rv; g->plan[pid].pc = (uint8_t)pc; g->plan[pid].cnt = (uint8_t)cn; g->plan[pid].rel = (uint8_t)rl; } } }
         g->has_scroll = 1;
+        if (g->old_data) { fprintf(stderr, "cadaver: this level file has no animation data; re-run tools/export_level.py\n"); snprintf(g->scroll_str, sizeof g->scroll_str, "OLD LEVEL FILE. RE-RUN THE EXPORT TOOL TO ANIMATE THE CREATURES."); g->scroll_t = SCROLL_TICKS; }
     }
     fclose(f);
     for (int rr = 0; rr < 100; rr++) for (int k = 0; k < g->rooms[rr].nobj; k++) { const Obj *o = &g->rooms[rr].objs[k]; if (o->pid >= 0 && o->pid < 1024 && g->mv_len[o->pid] && o->slot >= 0 && o->slot < 256) g->spr[o->slot].creature = 1; }
