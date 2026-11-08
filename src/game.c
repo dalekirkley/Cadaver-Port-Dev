@@ -485,6 +485,30 @@ static void vm_op(Vm *m, int op) {
         unsigned sd = g->rng_seed ? g->rng_seed : (0x1d2bu ^ ((unsigned)g->tickno * 7919u)); unsigned d0 = (((sd << 8) & 0xff00u) | 0x0au); d0 = (d0 - sd) & 0xffffu; d0 = (d0 * 4 + sd + 1) & 0xffffu; if (!d0) d0 = 1; g->rng_seed = d0;
         unsigned range = (unsigned)(hi - lo + 1) & 0xffffu; if (!range) range = 1; unsigned d3 = 0xffffu / range + 1; g->rng_last = (d0 / d3 + (unsigned)lo) & 0xffu; break; }
     case 0x50: { int n = m->c[m->p++]; m->cond = (g->rng_last == (unsigned)n) ? m->cond + 1 : 0; break; }           /* condition: the last random number equals n ($10a8e) */
+    case 0x43: { Obj *q = find_obj(g, vm_word(m)); if (q) q->xflags &= ~0x40; break; }                              /* the object shows its verbs again ($10a04) */
+    case 0x0b: case 0x0c: { int id = vm_word(m); Obj *q = id >= 0x8000 ? m->self : find_obj(g, id);                   /* movement record state: 0b -> 0, 0c -> 1; both let the movement program run ($10198, $101da) */
+        if (q && q != &g->hero) q->mstop = 0; break; }
+    case 0x04: { int id = vm_word(m); Obj *q = id >= 0x8000 ? m->self : find_obj(g, id);                              /* animation state := $ff (ended, shown) ($ff4a) */
+        if (q && q->aon) q->amode = 0xff; break; }
+    case 0x45: { vm_word(m); m->p += 3; break; }                                                                      /* load the movement counters of a lift (only one use in all levels: level 2, +8 in z) */
+    case 0x2c: { vm_word(m); m->p += 4; break; }                                                                       /* queue a visual effect at an object ($10424): no gameplay effect */
+    case 0x51: { int n = m->c[m->p++]; g->rng_last = g->counter[n]; break; }                                         /* load the condition register from counter n ($107e8), tested by op 50 */
+    case 0x5a: { int a = m->c[m->p], b = m->c[m->p + 1], c = m->c[m->p + 2]; m->p += 3; g->poison = a; if (a) g->poison_t = 0; g->tmr[0] = (uint8_t)b; g->tmr[1] = (uint8_t)c; break; }   /* poison strength and the two timers ($10ace) */
+    case 0x2a: m->p += 2; break;                                                                                       /* two hero state bytes ($1081e): meaning not decoded */
+    case 0x5b: { int n = m->c[m->p++]; m->cond = (m->self && m->self->slot == n) ? m->cond + 1 : 0; break; }        /* condition: the event object's type is n ($10af0) */
+    case 0x55: { int w = (int16_t)vm_word(m); g->gold += w; if (g->gold < 0) g->gold = 0; play_sound(g, w < 0 ? 0x24 : 0x1a); break; }   /* add a signed word to the gold ($ff94) */
+    case 0x59: vm_word(m); break;                                                                                      /* clear bit 0 of a part byte of an object ($1004e): not modelled */
+    case 0x52: m->p++; break;                                                                                          /* move all objects of a kind ($10a9c): not modelled */
+    case 0x42: m->p += 3; break;                                                                                       /* queue a behaviour request for an object ($109de): not modelled */
+    case 0x07: m->p += 2; break;                                                                                       /* deferred event for an id ($fff6): not modelled */
+    case 0x09: m->p++; break;                                                                                          /* post event $4013 with an argument to the hero ($107f8) */
+    case 0x40: { int d0 = vm_word(m); if (d0 & 0x8000) m->p += 2; else m->p += 3; m->cond = 0; break; }              /* compare a game variable with a value ($10760): variables not mapped, treated as false */
+    case 0x18: { Obj *q = find_obj(g, vm_word(m)); if (q) q->flags ^= 1; break; }                                    /* toggle placement flag bit 0 ($10318) */
+    case 0x19: { Obj *q = find_obj(g, vm_word(m)); if (q) q->flags ^= 2; break; }                                    /* toggle placement flag bit 1 ($10324) */
+    case 0x38: { int id = vm_word(m); int rm = m->c[m->p], b[6]; for (int i = 0; i < 6; i++) b[i] = m->c[m->p + 1 + i]; m->p += 7;   /* condition: the object stands in room rm inside a box ($10902) */
+        Obj *q = id >= 0x8000 ? m->self : find_obj(g, id); int in = 0;
+        if (q && g->cur == rm && q->x >= b[0] && q->x < b[1] && q->y >= b[2] && q->y < b[3] && q->z >= b[4] && q->z <= b[5]) in = 1;
+        m->cond = in ? m->cond + 1 : 0; break; }
     default: m->stop = 1; break;                                      /* not decoded yet */
     }
 }
