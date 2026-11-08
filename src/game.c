@@ -47,7 +47,7 @@ struct Game {
     Obj hero;                         /* hero.slot = 8 */
     int facing, anim_t, moving;
     uint8_t font[46 * 24], fontmap[32]; char **text; int ntext; int day; int energy; int jump_t, jump_z0;
-    int has_scroll, old_data; uint8_t mvstate[1024], kill_ok[1024], kill_rew[1024], kill_fl[1024];   /* 0 = unknown, else movement state + 1 (3 = chase the hero) */  uint8_t scroll_tiles[18 * 32], scroll_map[0x30], font5[46 * 20]; int nexam, nuse, ntake; uint16_t take_pid[512]; int16_t take_gold[512], take_xp[512]; uint8_t counter[256], gflag[256]; uint32_t gbits; int nhid; struct { int room; Obj o; } hid[1024]; int hurt_cd; unsigned rng_seed, rng_last; int ent_tick; uint8_t rs_done[100][16]; uint8_t *aprog[256]; int aprog_len[256], asec[256][4], asec_n[256]; struct { uint8_t has, mode, frame, rev, pc, cnt, rel; } plan[1024]; int want_level; int pull_pid, pull_room; int spawn_pid; int rs_period[100], rs_nb[100]; uint8_t *rs_blk[100][16]; int tm_room, tm_left; uint8_t mv_prog[1024][96]; uint8_t mv_len[1024], mv_step[1024][3], mv_pat[1024]; int lvl1; int nch; uint16_t ch_pid[64], ch_cont[64], ch_key[64]; uint8_t ch_flags[64], ch_trap[64]; int dbg, dbg_verb, dbg_pid, dbg_ran, dbg_execs; unsigned dbg_log[4][3]; unsigned char dbg_tr[48]; int dbg_ntr; int nvm; uint16_t vm_pid[256]; uint8_t vm_len[256], vm_code[256][255]; uint16_t exam_pid[512], exam_text[512], use_pid[512], use_text[512];   /* examine scroll */
+    int has_scroll, old_data; uint8_t mvstate[1024], kill_ok[1024], kill_rew[1024], kill_fl[1024];   /* 0 = unknown, else movement state + 1 (3 = chase the hero) */  uint8_t scroll_tiles[18 * 32], scroll_map[0x30], font5[46 * 20]; int nexam, nuse, ntake; uint16_t take_pid[512]; int16_t take_gold[512], take_xp[512]; uint8_t counter[256], gflag[256]; uint32_t gbits; int nhid; struct { int room; Obj o; } hid[1024]; int hurt_cd, touch_snd; unsigned rng_seed, rng_last; int ent_tick; uint8_t rs_done[100][16]; uint8_t *aprog[256]; int aprog_len[256], asec[256][4], asec_n[256]; struct { uint8_t has, mode, frame, rev, pc, cnt, rel; } plan[1024]; int want_level; int pull_pid, pull_room; int spawn_pid; int rs_period[100], rs_nb[100]; uint8_t *rs_blk[100][16]; int tm_room, tm_left; uint8_t mv_prog[1024][96]; uint8_t mv_len[1024], mv_step[1024][3], mv_pat[1024]; int lvl1; int nch; uint16_t ch_pid[64], ch_cont[64], ch_key[64]; uint8_t ch_flags[64], ch_trap[64]; int dbg, dbg_verb, dbg_pid, dbg_ran, dbg_execs; unsigned dbg_log[4][3]; unsigned char dbg_tr[48]; int dbg_ntr; int nvm; uint16_t vm_pid[256]; uint8_t vm_len[256], vm_code[256][255]; uint16_t exam_pid[512], exam_text[512], use_pid[512], use_text[512];   /* examine scroll */
     int scroll_t; char scroll_str[256]; long score; int map_open, map_px, map_py, status_open; long gold, xp, level; uint8_t visited[100];
     int has_icons; uint8_t icons[20 * 112]; uint16_t slotpos[8][4]; uint8_t verbtab[16];
     int target, nverbs, verbs[8], menu, sel, prev_joy, msg, msg_t, ninv, inv[64], inv_slot[64], inv_mode, inv_sel, inv_hold;     /* verb menu state */
@@ -376,7 +376,7 @@ static void vm_op(Vm *m, int op) {
             r->objs[r->nobj++] = o; g->hid[i] = g->hid[--g->nhid]; break; }
         break; }
     case 0x05: { int d = m->c[m->p]; m->p++; g->gold += d; if (g->gold < 0) g->gold = 0; play_sound(g, d < 0 ? 0x24 : 0x1a); break; }   /* add gold ($ffa0) */
-    case 0x33: { int n = m->c[m->p]; m->p++; if (n <= 9) g->want_level = n + 2; m->stop = 1; break; }              /* go to level n+2 ($10098) */
+    case 0x33: { int n = m->c[m->p]; m->p++; play_sound(g, 0x15); if (n <= 9) g->want_level = n + 2; m->stop = 1; break; }              /* go to level n+2 ($10098) */
     case 0x24: { int id = vm_word(m); int x = m->c[m->p], y = m->c[m->p + 1], z = m->c[m->p + 2]; m->p += 4;   /* move/spawn a placement into the current room ($104b4) */
         Room *cr = &g->rooms[g->cur]; Obj o2; int got = 0;
         int skey = (x << 8 | y) + 1;                                     /* one placement can be spawned several times at different spots (3 bats in room 38); the same spot again is a repeat */
@@ -387,7 +387,7 @@ static void vm_op(Vm *m, int op) {
             for (int i = 0; i < r2->nobj; i++) if (r2->objs[i].pid == id) { o2 = r2->objs[i]; r2->objs[i] = r2->objs[--r2->nobj]; got = 1; break; } }
         if (!got) return;
         o2.flags &= ~0x90; o2.x = x; o2.y = y; o2.z = (z >= 0x40 && !(g->lvl1 && o2.slot == 119)) ? 0 : z; o2.anim = g->spr[o2.slot].nfr >= 10 ? 8 : 0; o2.atick = 8; o2.stage = 0; o2.skey = skey; cr->objs[cr->nobj++] = o2; break; }
-    case 0x25: { int n = m->c[m->p], dx = m->c[m->p + 1], dy = m->c[m->p + 2], dz = m->c[m->p + 3]; m->p += 4;   /* teleport the hero into room n at an offset from its origin ($10546) */
+    case 0x25: { int n = m->c[m->p], dx = m->c[m->p + 1], dy = m->c[m->p + 2], dz = m->c[m->p + 3]; m->p += 4; play_sound(g, 0x15);   /* teleport the hero into room n at an offset from its origin ($10546) */
         if (n < 100 && g->rooms[n].valid) { g->cur = n; g->hero.x = MARGIN + HERO_FX + dx; g->hero.y = MARGIN + HERO_FY + dy; g->hero.z = dz; }
         break; }
     case 0x29: { int id = vm_word(m); int rm = m->c[m->p], x = m->c[m->p + 1], y = m->c[m->p + 2], z = m->c[m->p + 3]; m->p += 4;   /* move an object (or rucksack item) to room rm ($10668) */
@@ -415,6 +415,7 @@ static void vm_op(Vm *m, int op) {
     case 0x15: { int id = vm_word(m); Obj *q = id >= 0x8000 ? m->self : find_obj(g, id); if (q) q->flags &= ~2; break; }   /* clear placement flag bit 1 ($1030c) */
     case 0x32: { int id = vm_word(m); Obj *q = id >= 0x8000 ? m->self : find_obj(g, id);                            /* post the destroy event (0x17) to an object ($1002c): it is removed */
         if (q && q != &g->hero) { if (q->dying > 0) break; if ((g->spr[q->slot].nfr > 1 || has_contact_script(g, q)) && !(g->lvl1 && q->slot == 121)) start_dying(g, q); else q->life = -1; } break; }   /* creatures die with a sound and a blink */
+    case 0x0d: { int n = m->c[m->p++]; g->xp -= n; if (g->xp < 0) g->xp = 0; play_sound(g, 4); break; }   /* lose experience ($1020e) */
     case 0x06: { int n = m->c[m->p++]; g->xp += n; g->gold += n >> 2; play_sound(g, 3); break; }                       /* experience (and a quarter of it as gold) ($ffdc) */
     case 0x4a: { int id = vm_word(m);                                                                              /* reveal a hidden object ($10068) */
         for (int i = 0; i < g->nhid; i++) if (g->hid[i].o.pid == id) {
@@ -480,7 +481,7 @@ static void inv_drop(Game *g, int idx) {
     Room *r = &g->rooms[g->cur]; Obj o; memset(&o, 0, sizeof o); o.pid = g->inv[idx]; o.slot = g->inv_slot[idx]; o.x = g->hero.x; o.y = g->hero.y; o.z = g->hero.z;
     if (g->inv_hold == o.pid) g->inv_hold = -1;
     if (r->nobj < 4000) r->objs[r->nobj++] = o;                          /* objs arrays have 32 spare entries; stay conservative below */
-    inv_remove(g, idx); play_sound(g, 0);
+    inv_remove(g, idx); play_sound(g, 0x0e);        /* verb 5 (drop with sound, $9bb0) */
 }
 /* Leaving the room through an exit wall; returns 1 if the room changed. */
 static int try_exit(Game *g, int dx, int dy) {
@@ -610,7 +611,7 @@ static void exec_verb(Game *g, int verb) {
     }
     if (verb == 7 || verb == 4 || (verb == 6 && g->has_scroll)) {                                  /* use / pull a lever: event-5 script (a lever also clicks, sound $38) */
         int pid = r->objs[g->target].pid;
-        { int ran = 0; int pidf = r->objs[g->target].flags; for (int i = 0; i < g->nvm; i++) if (g->vm_pid[i] == pid) { if (!ran && (verb == 7 || verb == 4)) play_sound(g, 0x38); ran = 1; g->dbg_ran++; run_script(g, &r->objs[g->target], g->vm_code[i], g->vm_len[i]); } if (ran && verb == 7 && r->objs[g->target].flags == pidf) r->objs[g->target].flags ^= 1; if (ran) return; }   /* a lever whose script leaves its own state alone still flips to the pulled picture */
+        { int ran = 0; int pidf = r->objs[g->target].flags; for (int i = 0; i < g->nvm; i++) if (g->vm_pid[i] == pid) { if (!ran && (verb == 7 || verb == 4)) play_sound(g, verb == 4 ? 0x30 : 0x3d); ran = 1; g->dbg_ran++; run_script(g, &r->objs[g->target], g->vm_code[i], g->vm_len[i]); } if (ran && verb == 7 && r->objs[g->target].flags == pidf) r->objs[g->target].flags ^= 1; if (ran) return; }   /* a lever whose script leaves its own state alone still flips to the pulled picture */
     }
     if (verb == 6 && g->has_scroll) {                                                 /* use: event 5 message scripts (inscriptions, switches) */
         int pid = r->objs[g->target].pid;
@@ -856,9 +857,11 @@ void game_tick(Game *g, int joy) {
       if (g->inv_mode && !g->ninv) g->inv_mode = 0;
       if (g->inv_mode && g->scroll_t <= 0) {
           int nd = (joy & 15) & ~(prev & 15), n = g->ninv, step = g->inv_mode == 2 ? 4 : 1;
+          int osel = g->inv_sel;
           if (nd & JOY_RIGHT) g->inv_sel = (g->inv_sel + 1) % n;
           if (nd & JOY_LEFT) g->inv_sel = (g->inv_sel + n - 1) % n;
           if (g->inv_mode == 2) { if ((nd & JOY_DOWN) && g->inv_sel + step < n) g->inv_sel += step; if ((nd & JOY_UP) && g->inv_sel - step >= 0) g->inv_sel -= step; }
+          if (g->inv_sel != osel) play_sound(g, 2);                                  /* cursor moved ($97c4) */
           if (ed & JOY_HOLD) g->inv_hold = (g->inv_hold == g->inv[g->inv_sel]) ? -1 : g->inv[g->inv_sel];
           if (ed & JOY_FIRE) inv_examine(g, g->inv_sel);
           if ((ed & JOY_DOWN) && g->inv_mode == 1) { inv_drop(g, g->inv_sel); }
@@ -876,7 +879,7 @@ void game_tick(Game *g, int joy) {
     if (g->msg_t > 0) g->msg_t--;
     if (g->menu) {                                                                     /* verb menu: the hero stands still */
         if (g->target < 0 || g->nverbs == 0) g->menu = 0;
-        else { if (fire_edge) { g->menu = 0; exec_verb(g, g->verbs[g->sel]); } else if (new_dirs) g->sel = move_sel(g, new_dirs); joy &= ~15; }
+        else { if (fire_edge) { g->menu = 0; play_sound(g, 0x37); exec_verb(g, g->verbs[g->sel]); } else if (new_dirs) { int os = g->sel; g->sel = move_sel(g, new_dirs); if (g->sel != os) play_sound(g, 2); } joy &= ~15; }
     } else if (fire_edge && held_ranged(g)) { fire_weapon(g); joy &= ~15;
     } else if (fire_edge && g->target >= 0 && g->nverbs > 0) { g->menu = 1; g->sel = 0; joy &= ~15; }
     else if (fire_edge && g->target < 0 && !g->jump_t && hero_grounded(g, r)) { g->jump_t = 1; g->jump_z0 = h->z; }    /* fire with nothing in front: jump */
@@ -945,6 +948,13 @@ void game_tick(Game *g, int joy) {
         if (g->pull_pid && g->pull_room == g->cur) {
             for (int i = 0; i < r->nobj; i++) if (r->objs[i].pid == g->pull_pid) { pulled = &r->objs[i]; break; }
             if (pulled) { Obj gh = *h; gh.x -= dx; gh.y -= dy; if (!overlap(box_of(g, &gh), box_of(g, pulled))) pulled = NULL; }
+        }
+        {   /* touching a solid object plays its type's contact sound once per touch ($8dde: table $5c0b indexed by type byte +$1d; $9bf remembers the last one) */
+            static const uint8_t touch_tab[19] = { 57, 16, 57, 51, 52, 57, 51, 57, 57, 57, 51, 57, 51, 57, 57, 52, 52, 52, 57 };
+            Obj gh = *h; gh.x += dx; gh.y += dy; Box gb = box_of(g, &gh); int snd = 0;
+            for (int i = 0; i < r->nobj && !snd; i++) { const Obj *q = &r->objs[i]; if (flat(g, q) || q->dying > 0 || !overlap(gb, box_of(g, q))) continue;
+                int ty = g->spr[q->slot].b1d; snd = ty >= 0 && ty < 19 ? touch_tab[ty] : 57; }
+            if (snd && snd != g->touch_snd) play_sound(g, snd); g->touch_snd = snd;
         }
         if (try_move(g, r, h, dx, dy, 0)) { if (pulled) try_move(g, r, pulled, dx, dy, 0); }
         else {
