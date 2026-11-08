@@ -47,7 +47,7 @@ struct Game {
     Obj hero;                         /* hero.slot = 8 */
     int facing, anim_t, moving;
     uint8_t font[46 * 24], fontmap[32]; char **text; int ntext; int day; int energy; int jump_t, jump_z0;
-    int has_scroll, old_data; uint8_t spl_ok[1024], spl_no[1024], spl_pow[1024], spl_fl[1024], spl_chg[1024]; uint8_t cons_ok[1024], cons_eff[1024], cons_amt[1024], cons_left[1024], cons_fl[1024]; int flash_t, tmr_t; uint8_t tmr[64]; unsigned aud_seed; int poison, poison_t, prot, prot_amt, atk_mask; uint8_t cre_hp[1024], cre_imm[1024], cre_fl6[1024], cre_ok[1024], spawn_snd[256], mvstate[1024], kill_ok[1024], kill_rew[1024], kill_fl[1024];   /* 0 = unknown, else movement state + 1 (3 = chase the hero) */  uint8_t scroll_tiles[18 * 32], scroll_map[0x30], font5[46 * 20]; int nexam, nuse, ntake; uint16_t take_pid[512]; int16_t take_gold[512], take_xp[512]; uint8_t counter[256], gflag[256], on_pl[1024]; int dly_arg, dly_t; uint32_t gbits; int nhid; struct { int room; Obj o; } hid[1024]; int hurt_cd, touch_snd, touch_seen; unsigned rng_seed, rng_last; int ent_tick; uint8_t rs_done[100][16]; uint8_t *aprog[256]; int aprog_len[256], asec[256][4], asec_n[256]; struct { uint8_t has, mode, frame, rev, pc, cnt, rel; } plan[1024]; int want_level; int pull_pid, pull_room; int spawn_pid; int rs_period[100], rs_nb[100]; uint8_t *rs_blk[100][16]; int tm_room, tm_left; uint8_t mv_prog[1024][96]; uint8_t mv_len[1024], mv_step[1024][3], mv_pat[1024]; int lvl1; int nch; uint16_t ch_pid[64], ch_cont[64], ch_key[64]; uint8_t ch_flags[64], ch_trap[64]; int dbg, dbg_verb, dbg_pid, dbg_ran, dbg_execs; unsigned dbg_log[4][3]; unsigned char dbg_tr[48]; int dbg_ntr; int nvm; uint16_t vm_pid[256]; uint8_t vm_len[256], vm_code[256][255]; uint16_t exam_pid[512], exam_text[512], use_pid[512], use_text[512];   /* examine scroll */
+    int has_scroll, old_data; uint8_t spl_ok[1024], spl_no[1024], spl_pow[1024], spl_fl[1024], spl_chg[1024]; uint8_t cons_ok[1024], cons_eff[1024], cons_amt[1024], cons_left[1024], cons_fl[1024]; int flash_t, tmr_t; uint8_t tmr[64]; unsigned aud_seed; int poison, poison_t, prot, prot_amt, atk_mask; uint8_t cre_hp[1024], cre_imm[1024], cre_fl6[1024], cre_ok[1024], spawn_snd[256], mvstate[1024], kill_ok[1024], kill_rew[1024], kill_fl[1024];   /* 0 = unknown, else movement state + 1 (3 = chase the hero) */  uint8_t scroll_tiles[18 * 32], scroll_map[0x30], font5[46 * 20]; int nexam, nuse, ntake; uint16_t take_pid[512]; int16_t take_gold[512], take_xp[512]; uint8_t counter[256], gflag[256], on_pl[1024]; int dly_arg, dly_t; int nuo; uint16_t uo_pid[256], uo_item[256]; uint8_t uo_len[256], uo_code[256][256]; uint32_t gbits; int nhid; struct { int room; Obj o; } hid[1024]; int hurt_cd, touch_snd, touch_seen; unsigned rng_seed, rng_last; int ent_tick; uint8_t rs_done[100][16]; uint8_t *aprog[256]; int aprog_len[256], asec[256][4], asec_n[256]; struct { uint8_t has, mode, frame, rev, pc, cnt, rel; } plan[1024]; int want_level; int pull_pid, pull_room; int spawn_pid; int rs_period[100], rs_nb[100]; uint8_t *rs_blk[100][16]; int tm_room, tm_left; uint8_t mv_prog[1024][96]; uint8_t mv_len[1024], mv_step[1024][3], mv_pat[1024]; int lvl1; int nch; uint16_t ch_pid[64], ch_cont[64], ch_key[64]; uint8_t ch_flags[64], ch_trap[64]; int dbg, dbg_verb, dbg_pid, dbg_ran, dbg_execs; unsigned dbg_log[4][3]; unsigned char dbg_tr[48]; int dbg_ntr; int nvm; uint16_t vm_pid[256]; uint8_t vm_len[256], vm_code[256][255]; uint16_t exam_pid[512], exam_text[512], use_pid[512], use_text[512];   /* examine scroll */
     int scroll_t; char scroll_str[256]; long score; int map_open, map_px, map_py, status_open; long gold, xp, level; uint8_t visited[100];
     int has_icons; uint8_t icons[20 * 112]; uint16_t slotpos[8][4]; uint8_t verbtab[16];
     int target, nverbs, verbs[8], menu, sel, prev_joy, msg, msg_t, ninv, inv[64], inv_slot[64], inv_mode, inv_sel, inv_hold;     /* verb menu state */
@@ -175,6 +175,8 @@ Game *game_load(const char *path) {
             for (int i = 0; i < nn; i++) { int pid = rd16(f), ef = rd8(f), am = rd8(f), us = rd8(f), fl = rd8(f); if (pid >= 0 && pid < 1024) { g->cons_ok[pid] = 1; g->cons_eff[pid] = (uint8_t)ef; g->cons_amt[pid] = (uint8_t)am; g->cons_left[pid] = (uint8_t)us; g->cons_fl[pid] = (uint8_t)fl; } } }
         if (rd8(f) == 1) { int nn = rd16(f); if (nn < 0 || nn > 1024) nn = 0;                       /* spells (optional): number, power, flags, charges of class-1 items */
             for (int i = 0; i < nn; i++) { int pid = rd16(f), no = rd8(f), pw = rd8(f), fl = rd8(f), ch = rd8(f); if (pid >= 0 && pid < 1024) { g->spl_ok[pid] = 1; g->spl_no[pid] = (uint8_t)no; g->spl_pow[pid] = (uint8_t)pw; g->spl_fl[pid] = (uint8_t)fl; g->spl_chg[pid] = (uint8_t)ch; } } }
+        if (rd8(f) == 1) { int nn = rd16(f); if (nn < 0 || nn > 255) nn = 0;                       /* use-on scripts (optional): event 0x12 blocks, item id + ops */
+            for (int i = 0; i < nn; i++) { int pid = rd16(f), it = rd16(f), ln = rd8(f); g->uo_pid[i] = (uint16_t)pid; g->uo_item[i] = (uint16_t)it; g->uo_len[i] = (uint8_t)ln; for (int k = 0; k < ln; k++) g->uo_code[i][k] = (uint8_t)rd8(f); g->nuo = i + 1; } }
         g->has_scroll = 1;
         if (g->old_data) { fprintf(stderr, "cadaver: this level file has no animation data; re-run tools/export_level.py\n"); snprintf(g->scroll_str, sizeof g->scroll_str, "OLD LEVEL FILE. RE-RUN THE EXPORT TOOL TO ANIMATE THE CREATURES."); g->scroll_t = SCROLL_TICKS; }
     }
@@ -380,6 +382,7 @@ typedef struct { Game *g; Obj *self; const uint8_t *c; int len, p, cond, stop; }
 static int vm_word(Vm *m) { int v = (m->c[m->p] << 8) | m->c[m->p + 1]; m->p += 2; return v; }
 static void vm_op(Vm *m, int op);
 static void room_event(Game *g, int ev, int arg);
+static void inv_remove(Game *g, int idx);
 static void vm_block(Vm *m) {                                         /* run ops until the 16 that closes the block */
     while (!m->stop && m->p < m->len) { int op = m->c[m->p++]; if (op == 0x16) return; vm_op(m, op); }
     m->stop = 1;
@@ -477,7 +480,7 @@ static void vm_op(Vm *m, int op) {
             if (m->p < m->len && m->c[m->p] == 0x0f) { m->p += 2; vm_block(m); }
         }
         break; }
-    case 0x00: case 0x08: { int id = vm_word(m); Obj *q = id >= 0x8000 ? m->self : find_obj(g, id); if (q && q != &g->hero) q->life = -1; break; }   /* 00: retire an object into the original's removed-objects list ($fd86, max 20; un-holds it); 08: hide it unless already hidden ($10004). Both: gone from the room */
+    case 0x00: case 0x08: { int id = vm_word(m); if (id < 0x8000) { int ki = -1; for (int i = 0; i < g->ninv; i++) if (g->inv[i] == id) ki = i; if (ki >= 0) { inv_remove(g, ki); break; } } Obj *q = id >= 0x8000 ? m->self : find_obj(g, id); if (q && q != &g->hero) q->life = -1; break; }   /* 00: retire an object into the original's removed-objects list ($fd86, max 20; un-holds it); 08: hide it unless already hidden ($10004). Both: gone from the room */
     case 0x03: { int id = vm_word(m); Obj *q = id >= 0x8000 ? m->self : find_obj(g, id);                          /* 03: restart a finished animation program ($fecc): state $fe -> 0 and the program moves past its f9 step */
         if (q && q->aon && q->amode == 0xfe) { q->amode = 0; q->apc++; q->flags ^= 1; }          /* the state byte +3 counts the presses: bit 0 is the state tested by op 1e */
         break; }
@@ -600,6 +603,7 @@ static void build_verbs(Game *g) {
     Room *r = &g->rooms[g->cur]; g->nverbs = 0;
     if (g->target < 0 || !g->has_icons) return;
     const Obj *o = &r->objs[g->target]; const Sprite *s = &g->spr[o->slot]; int *v = g->verbs, n = 0;
+    if (g->inv_hold >= 0) for (int i = 0; i < g->nuo; i++) if (g->uo_pid[i] == o->pid && g->uo_item[i] == g->inv_hold) { v[n++] = 12; break; }   /* use the held item on this object ($a036): only when it has a block for it */
     if ((s->c & 2) && !(o->xflags & 4)) v[n++] = 2;                                   /* take */
     if (s->b17 && !(o->xflags & 0x40) && g->verbtab[s->b17 & 15] < 20) v[n++] = g->verbtab[s->b17 & 15];
     if (s->b1d == 0x12) v[n++] = 0xe;
@@ -703,6 +707,13 @@ static void exec_verb(Game *g, int verb) {
             ch->flags |= 1; play_sound(g, 0x38);
             for (int i = 0; i < g->nvm; i++) if (g->vm_pid[i] == ch->pid) run_script(g, ch, g->vm_code[i], g->vm_len[i]);
         } else say(g, 4);
+        return;
+    }
+    if (verb == 12) {                                                                 /* use the held item on the target: sound $1e, then the target's event-0x12 block for that item */
+        Obj *ob = &r->objs[g->target]; int pid = ob->pid, it = g->inv_hold;
+        play_sound(g, 0x1e); g->menu = 0; g->nverbs = 0;
+        for (int i = 0; i < g->nuo; i++) if (g->uo_pid[i] == pid && g->uo_item[i] == it) { run_script(g, &g->rooms[g->cur].objs[g->target], g->uo_code[i], g->uo_len[i]); break; }
+        g->target = -1;
         return;
     }
     if (verb == 0xe) {                                                                /* eat ($a168): the food is removed and the drink sound plays; measured in the emulator, a loaf gives no energy */

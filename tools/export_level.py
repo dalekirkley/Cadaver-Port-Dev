@@ -383,4 +383,17 @@ for pid in range(1024):
     sp.append((pid,pr[q],pr[q+1],pr[q+3],pr[q+7]))
 P('B',1);P('H',len(sp))
 for t in sp:P('HBBBB',*t)
+# use-on scripts (optional, after the spells): event 0x12 blocks [len][12][item id word][ops]: the item is used on this placement (verb 12, $a036)
+uo=[]
+for i in range(L.g6.n):
+    e=L.g6.rec(i)
+    if len(e)<0x11 or not e[0x0b]:continue
+    p=0x10
+    for _ in range(e[0x0b]):
+        if p>=len(e) or not e[p]:break
+        ln=e[p]
+        if e[p+1]&0x7f==0x12 and ln>=4 and len(uo)<255:uo.append((i,u16(e,p+2),bytes(e[p+4:p+ln][:250])))
+        p+=ln
+P('B',1);P('H',len(uo))
+for i,it,b in uo:P('HHB',i,it,len(b));o+=b
 open(out,'wb').write(o);print(len(o),'bytes,',len(exam),'examine texts')
