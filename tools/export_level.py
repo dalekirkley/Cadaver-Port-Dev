@@ -393,6 +393,7 @@ for i in range(L.g6.n):
         if p>=len(e) or not e[p]:break
         ln=e[p]
         if e[p+1]&0x7f==0x12 and ln>=4 and len(uo)<255:uo.append((i,u16(e,p+2),bytes(e[p+4:p+ln][:250])))
+        elif e[p+1]&0x7f==9 and ln>=4 and e[p+2:p+4]!=b'\0\0' and u16(e,p+2)<0x400 and len(uo)<255:uo.append((i,0x8000|u16(e,p+2),bytes(e[p+4:p+ln][:250])))   # event 9 with a specific other object: contact
         p+=ln
 P('B',1);P('H',len(uo))
 for i,it,b in uo:P('HHB',i,it,len(b));o+=b
