@@ -585,7 +585,11 @@ static void cast_spell(Game *g, int target) {
         if (!done) { say(g, 47); return; }                                              /* "you wasted that spell" */
     } else {
         play_sound(g, 6);
-        if (no == 2) { g->tmr[0x22] = (uint8_t)pw; start_flash(g); }                    /* services $30 (start timer) and $1c (flash) */
+        if (no == 1 || no == 5) {                                                       /* area attack: every creature in the room that is not invulnerable loses the spell's power in health (routines $968e4 / $96958) */
+            start_flash(g);
+            for (int i = 0; i < r->nobj; i++) { Obj *q = &r->objs[i]; int cp = q->pid; if (cp < 0 || cp >= 1024 || !g->cre_ok[cp] || q->dying > 0 || (g->cre_fl6[cp] & 1)) continue;
+                if (q->hp <= 0) q->hp = g->cre_hp[cp]; q->hp -= pw; if (q->hp <= 0) start_dying(g, q); }
+        } else if (no == 2) { g->tmr[0x22] = (uint8_t)pw; start_flash(g); }                    /* services $30 (start timer) and $1c (flash) */
         else if (no == 22) { g->tmr[0x26] = (uint8_t)pw; start_flash(g); }
     }
     for (int i = 0; i < g->ninv; i++) if (g->inv[i] == pid) { inv_remove(g, i); break; }   /* the scroll or stone is used up and no longer held */
