@@ -232,6 +232,7 @@ static void play_sound(Game *g, int snd) {
     }
 }
 
+#define FOOTSTEP_VARIANCE 0.15   /* +-15% of the original volume per step; +-5% (0.4 dB) was too small to hear */
 /* Audio-only random in -1..1 (kept apart from the simulation's generator): footsteps vary +-5% in volume. */
 static double audio_rand(Game *g) { g->aud_seed = g->aud_seed * 1664525u + 1013904223u; return ((g->aud_seed >> 8) & 0xffff) / 32767.5 - 1.0; }
 
@@ -244,7 +245,7 @@ void game_audio_mix(Game *g, int16_t *out, int n, int rate) {
             if (sq->i >= sq->n) { sq->ev = NULL; continue; }
             const SndEv *e = &sq->ev[sq->i]; int last = sq->i == sq->n - 1;
             if (sq->mv >= 0) g->voice[sq->mv].step = 0;
-            if (e->sample >= 0) sq->mv = play_voice(g, e->sample, e->period, sq->snd == 0 ? e->vol * (1.0 + 0.05 * audio_rand(g)) : (double)e->vol, (last && e->sample < 65) ? (sq->snd == 0 ? 0.1 : 0.6) : e->ticks * SND_TICK_SEC); else sq->mv = -1;
+            if (e->sample >= 0) sq->mv = play_voice(g, e->sample, e->period, sq->snd == 0 ? e->vol * (1.0 + FOOTSTEP_VARIANCE * audio_rand(g)) : (double)e->vol, (last && e->sample < 65) ? (sq->snd == 0 ? 0.1 : 0.6) : e->ticks * SND_TICK_SEC); else sq->mv = -1;
             if (sq->mv >= 0) g->voice[sq->mv].snd = sq->snd + 1;
             sq->t += e->ticks * SND_TICK_SEC; sq->i++; sq->el += e->ticks * SND_TICK_SEC; if (sq->el > SND_MAX_SEC) sq->i = sq->n;
         }
