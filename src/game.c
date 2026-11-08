@@ -266,7 +266,7 @@ static Box box_of(const Game *g, const Obj *o) {
 static int overlap(Box a, Box b) {
     return !(a.x1 < b.x0 || b.x1 < a.x0 || a.y1 < b.y0 || b.y1 < a.y0 || a.z1 < b.z0 || b.z1 < a.z0);
 }
-static int flat(const Game *g, const Obj *o) { const Sprite *s = &g->spr[o->slot]; return o->slot != 8 && !s->push && s->fz <= 2; }   /* floor decals: walk-over, drawn under everything */
+static int flat(const Game *g, const Obj *o) { const Sprite *s = &g->spr[o->slot]; return o->slot != 8 && ((!s->push && s->fz <= 2) || o->dying > 0); }   /* floor decals: walk-over, drawn under everything */
 /* Walking pushes only light objects (type byte +$c bit 1, the TAKE bit); bit 0 alone = heavy furniture (altars, pillars) that only the MOVE verb could shift. */
 static int has_contact_script(const Game *g, const Obj *o) { for (int k = 0; k < g->nvm; k++) if (g->vm_pid[k] == (o->pid | 0x8000)) return 1; return 0; }
 static int pushable(const Game *g, const Obj *o) {
@@ -335,6 +335,14 @@ static Obj *find_obj(Game *g, int pid) {
     for (int rm = 0; rm < 100; rm++) { Room *r = &g->rooms[rm]; if (!r->valid) continue; for (int i = 0; i < r->nobj; i++) if (r->objs[i].pid == pid) return &r->objs[i]; }
     return NULL;
 }
+/* A killed creature turns into the explosion ring in place (emulator, room 7 worm: the instance's type is swapped for an 8-frame ring sprite at the same x,y; each frame lasts 2 ticks = 16 ticks, then the object is gone).
+   The ring is the level's 8-frame 32x16 sprite with c = 0x44 (slot 95 on level 1, 82/154/111/84 on levels 2-5). */
+static void start_dying(Game *g, Obj *q) {
+    int fx = -1;
+    for (int s = 0; s < 255 && fx < 0; s++) if (g->spr[s].nfr == 8 && g->spr[s].fr[0].w == 32 && g->spr[s].fr[0].h == 16 && g->spr[s].c == 0x44) fx = s;
+    q->aon = 0; q->flags &= ~1; q->lift = 0; q->anim = 0; q->dying = fx >= 0 ? 16 : 14;
+    if (fx >= 0) q->slot = fx;
+}
 static void creature_hit_sound(Game *g, const Obj *q) {
     static const uint8_t hit_snd[19] = { 9, 9, 9, 13, 13, 9, 19, 9, 9, 9, 19, 9, 13, 9, 9, 13, 13, 19, 9 };    /* victim's hit sound, table $5bf8 indexed by type byte +$1d */
     int ty = g->spr[q->slot].b1d; play_sound(g, ty >= 0 && ty < 19 ? hit_snd[ty] : 0x1a);
@@ -401,7 +409,7 @@ static void vm_op(Vm *m, int op) {
         m->cond = in ? m->cond + 1 : 0; break; }
     case 0x15: { int id = vm_word(m); Obj *q = id >= 0x8000 ? m->self : find_obj(g, id); if (q) q->flags &= ~2; break; }   /* clear placement flag bit 1 ($1030c) */
     case 0x32: { int id = vm_word(m); Obj *q = id >= 0x8000 ? m->self : find_obj(g, id);                            /* post the destroy event (0x17) to an object ($1002c): it is removed */
-        if (q && q != &g->hero) { if (q->dying > 0) break; if (g->spr[q->slot].nfr > 1) { q->dying = 14; q->aon = 0; creature_hit_sound(g, q); } else q->life = -1; } break; }   /* creatures die with a sound and a blink */
+        if (q && q != &g->hero) { if (q->dying > 0) break; if (g->spr[q->slot].nfr > 1) start_dying(g, q); else q->life = -1; } break; }   /* creatures die with a sound and a blink */
     case 0x06: { int n = m->c[m->p++]; g->xp += n; g->gold += n >> 2; play_sound(g, 3); break; }                       /* experience (and a quarter of it as gold) ($ffdc) */
     case 0x4a: { int id = vm_word(m);                                                                              /* reveal a hidden object ($10068) */
         for (int i = 0; i < g->nhid; i++) if (g->hid[i].o.pid == id) {
@@ -692,7 +700,7 @@ static void update_missiles(Game *g) {
                     if (q->hp <= 0) q->hp = CREATURE_HP;
                     q->hp -= ROCK_POWER;
                     creature_hit_sound(g, q);
-                    if (q->hp <= 0) { q->dying = 14; q->aon = 0; }   /* killed: freezes and blinks for 14 ticks, then is removed (the death script hides it; the exact original effect is not measured) */
+                    if (q->hp <= 0) start_dying(g, q);
                 }
                 dead = 1; break;
             }
@@ -871,7 +879,9 @@ void game_tick(Game *g, int joy) {
     int dy = ((joy & JOY_DOWN) ? 1 : 0) - ((joy & JOY_UP) ? 1 : 0);
     g->tickno++;
     if (g->hurt_cd > 0) g->hurt_cd--;
-    for (int i = 0; i < r->nobj; i++) if (r->objs[i].dying > 0 && --r->objs[i].dying == 0) r->objs[i].life = -1;
+    for (int i = 0; i < r->nobj; i++) { Obj *d = &r->objs[i]; if (d->dying <= 0) continue;
+        if (g->spr[d->slot].nfr == 8 && g->spr[d->slot].c == 0x44) d->anim = (16 - d->dying) / 2 > 7 ? 7 : (16 - d->dying) / 2;
+        if (--d->dying == 0) d->life = -1; }
     for (int i = 0; i < r->nobj; i++) { Obj *c = &r->objs[i]; if (c->slot < 0 || c->slot > 255 || !g->aprog[c->slot] || !c->aon) continue;      /* animation programs of creatures and props */
         anim_step(g, c);
         if (!g->lvl1 || (c->slot != 111 && c->slot != 112 && c->slot != 116 && c->slot != 121)) c->anim = c->aframe;   /* level 1: the dragon, flame, worm and water lurker keep their hand logic */   /* level 1: walkers 113/117/119 follow their programs (checked against the original's stepper: 3, 2 and 2 ticks per frame; the old hand-measured table was aliased by the capture interval) */
@@ -1210,8 +1220,8 @@ void game_render(const Game *g, uint32_t *fb) {
     memcpy(fb, r->bg, SCREEN_W * SCREEN_H * 4);
     DrawItem items[256]; int n = 0;
     for (int i = 0; i < r->nobj && n < 255; i++) {
-        const Obj *o = &r->objs[i]; if (o->dying > 0 && (o->dying & 2)) continue;     /* dying creatures blink */
-        items[n++] = (DrawItem){ flat(g, o) ? -1000 : o->x + o->y, o->x, o->y, o->z + o->lift, o->slot, 0, box_of(g, o), !flat(g, o), (o->flags & 1) && g->spr[o->slot].apx != NULL, g->spr[o->slot].nfr ? o->anim : -1 };
+        const Obj *o = &r->objs[i]; 
+        items[n++] = (DrawItem){ flat(g, o) && o->dying <= 0 ? -1000 : o->x + o->y, o->x, o->y, o->z + o->lift, o->slot, 0, box_of(g, o), !flat(g, o) || o->dying > 0, (o->flags & 1) && g->spr[o->slot].apx != NULL, g->spr[o->slot].nfr ? o->anim : -1 };
     }
     for (int i = 0; i < r->nwalls && n < 255; i++) {
         const Wall *w = &r->walls[i]; const Sprite *s = &g->spr[w->slot];
