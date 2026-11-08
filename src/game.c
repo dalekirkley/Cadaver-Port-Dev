@@ -18,7 +18,7 @@
 #define WALK_TICKS_PER_FRAME 3   /* measured in the original: 6 video frames per walk frame */
 
 typedef struct { int len; int8_t *data; } Sfx;
-typedef struct { int sfx; double pos, step; int vol; double left, total; } Voice;
+typedef struct { int sfx; double pos, step; int vol, snd; double left, total; } Voice;
 typedef struct { const SndEv *ev; int n, i, mv, snd; double t, el; } SeqVoice;   /* left = seconds before the voice is cut (0 = play to the end) */
 typedef struct { int state, w, h; int16_t f[5]; int push; int16_t fx, fy, fz, name; uint8_t c, b16, b17, b1d; uint8_t *px; int aw, ah, ax, ay, f0x, f0y, creature; uint8_t *apx; int nfr; struct { int w, h, dx, dy; uint8_t *px; } fr[16]; } Sprite;
 typedef struct { int16_t hx, hy; int w, h; uint8_t *px; } Frame;
@@ -47,7 +47,7 @@ struct Game {
     Obj hero;                         /* hero.slot = 8 */
     int facing, anim_t, moving;
     uint8_t font[46 * 24], fontmap[32]; char **text; int ntext; int day; int energy; int jump_t, jump_z0;
-    int has_scroll, old_data; uint8_t spawn_snd[256], mvstate[1024], kill_ok[1024], kill_rew[1024], kill_fl[1024];   /* 0 = unknown, else movement state + 1 (3 = chase the hero) */  uint8_t scroll_tiles[18 * 32], scroll_map[0x30], font5[46 * 20]; int nexam, nuse, ntake; uint16_t take_pid[512]; int16_t take_gold[512], take_xp[512]; uint8_t counter[256], gflag[256]; uint32_t gbits; int nhid; struct { int room; Obj o; } hid[1024]; int hurt_cd, touch_snd; unsigned rng_seed, rng_last; int ent_tick; uint8_t rs_done[100][16]; uint8_t *aprog[256]; int aprog_len[256], asec[256][4], asec_n[256]; struct { uint8_t has, mode, frame, rev, pc, cnt, rel; } plan[1024]; int want_level; int pull_pid, pull_room; int spawn_pid; int rs_period[100], rs_nb[100]; uint8_t *rs_blk[100][16]; int tm_room, tm_left; uint8_t mv_prog[1024][96]; uint8_t mv_len[1024], mv_step[1024][3], mv_pat[1024]; int lvl1; int nch; uint16_t ch_pid[64], ch_cont[64], ch_key[64]; uint8_t ch_flags[64], ch_trap[64]; int dbg, dbg_verb, dbg_pid, dbg_ran, dbg_execs; unsigned dbg_log[4][3]; unsigned char dbg_tr[48]; int dbg_ntr; int nvm; uint16_t vm_pid[256]; uint8_t vm_len[256], vm_code[256][255]; uint16_t exam_pid[512], exam_text[512], use_pid[512], use_text[512];   /* examine scroll */
+    int has_scroll, old_data; uint8_t spawn_snd[256], mvstate[1024], kill_ok[1024], kill_rew[1024], kill_fl[1024];   /* 0 = unknown, else movement state + 1 (3 = chase the hero) */  uint8_t scroll_tiles[18 * 32], scroll_map[0x30], font5[46 * 20]; int nexam, nuse, ntake; uint16_t take_pid[512]; int16_t take_gold[512], take_xp[512]; uint8_t counter[256], gflag[256]; uint32_t gbits; int nhid; struct { int room; Obj o; } hid[1024]; int hurt_cd, touch_snd, touch_seen; unsigned rng_seed, rng_last; int ent_tick; uint8_t rs_done[100][16]; uint8_t *aprog[256]; int aprog_len[256], asec[256][4], asec_n[256]; struct { uint8_t has, mode, frame, rev, pc, cnt, rel; } plan[1024]; int want_level; int pull_pid, pull_room; int spawn_pid; int rs_period[100], rs_nb[100]; uint8_t *rs_blk[100][16]; int tm_room, tm_left; uint8_t mv_prog[1024][96]; uint8_t mv_len[1024], mv_step[1024][3], mv_pat[1024]; int lvl1; int nch; uint16_t ch_pid[64], ch_cont[64], ch_key[64]; uint8_t ch_flags[64], ch_trap[64]; int dbg, dbg_verb, dbg_pid, dbg_ran, dbg_execs; unsigned dbg_log[4][3]; unsigned char dbg_tr[48]; int dbg_ntr; int nvm; uint16_t vm_pid[256]; uint8_t vm_len[256], vm_code[256][255]; uint16_t exam_pid[512], exam_text[512], use_pid[512], use_text[512];   /* examine scroll */
     int scroll_t; char scroll_str[256]; long score; int map_open, map_px, map_py, status_open; long gold, xp, level; uint8_t visited[100];
     int has_icons; uint8_t icons[20 * 112]; uint16_t slotpos[8][4]; uint8_t verbtab[16];
     int target, nverbs, verbs[8], menu, sel, prev_joy, msg, msg_t, ninv, inv[64], inv_slot[64], inv_mode, inv_sel, inv_hold;     /* verb menu state */
@@ -211,6 +211,12 @@ static int play_voice(Game *g, int id, int period, int vol, double seconds) {
     g->voice[v].sfx = id; g->voice[v].pos = 0; g->voice[v].step = 3546895.0 / period; g->voice[v].vol = vol; g->voice[v].left = seconds; g->voice[v].total = seconds; return v;
 }
 
+/* Cut a sound that is still playing (original $153fa: the contact sound stops when the contact ends). */
+static void stop_sound(Game *g, int snd) {
+    for (int q = 0; q < 8; q++) if (g->sq[q].ev && g->sq[q].snd == snd) g->sq[q].ev = NULL;
+    for (int v = 0; v < 4; v++) if (g->voice[v].step && g->voice[v].snd == snd + 1) g->voice[v].step = 0;
+}
+
 /* Play a game sound id with its real per-voice samples, periods and volumes. */
 static void play_sound(Game *g, int snd) {
     if (snd < 0 || snd >= 69) return;
@@ -232,6 +238,7 @@ void game_audio_mix(Game *g, int16_t *out, int n, int rate) {
             const SndEv *e = &sq->ev[sq->i]; int last = sq->i == sq->n - 1;
             if (sq->mv >= 0) g->voice[sq->mv].step = 0;
             if (e->sample >= 0) sq->mv = play_voice(g, e->sample, e->period, e->vol, (last && e->sample < 65) ? (sq->snd == 0 ? 0.1 : 0.6) : e->ticks * SND_TICK_SEC); else sq->mv = -1;
+            if (sq->mv >= 0) g->voice[sq->mv].snd = sq->snd + 1;
             sq->t += e->ticks * SND_TICK_SEC; sq->i++; sq->el += e->ticks * SND_TICK_SEC; if (sq->el > SND_MAX_SEC) sq->i = sq->n;
         }
         for (int v = 0; v < 4; v++) {
@@ -943,6 +950,8 @@ void game_tick(Game *g, int joy) {
     }
     if (g->pull_pid && g->pull_room != g->cur) g->pull_pid = 0;
     update_missiles(g);
+    if (!g->touch_seen && g->touch_snd) { stop_sound(g, g->touch_snd); g->touch_snd = 0; }   /* not pushing any more: cut the contact sound */
+    g->touch_seen = 0;
     g->moving = 0;
     if (dx || dy) {
         g->facing = joy & 15; g->moving = 1;
@@ -956,7 +965,7 @@ void game_tick(Game *g, int joy) {
             Obj gh = *h; gh.x += dx; gh.y += dy; Box gb = box_of(g, &gh); int snd = 0;
             for (int i = 0; i < r->nobj && !snd; i++) { const Obj *q = &r->objs[i]; if (flat(g, q) || q->dying > 0 || !overlap(gb, box_of(g, q))) continue;
                 int ty = g->spr[q->slot].b1d; snd = ty >= 0 && ty < 19 ? touch_tab[ty] : 57; }
-            if (snd && snd != g->touch_snd) play_sound(g, snd); g->touch_snd = snd;
+            if (snd != g->touch_snd) { if (g->touch_snd) stop_sound(g, g->touch_snd); if (snd) play_sound(g, snd); } g->touch_snd = snd; g->touch_seen = 1;
         }
         if (try_move(g, r, h, dx, dy, 0)) { if (pulled) try_move(g, r, pulled, dx, dy, 0); }
         else {
