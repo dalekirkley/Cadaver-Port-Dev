@@ -20,12 +20,8 @@ def voice(si):
             elif i==3:dur=arg
             elif i==4:ev.append((-1,0,0,max(1,dur*tempo)))
             elif i==5:tempo=max(1,0x2ee//arg) if arg else tempo
-            elif i==10:loops.append([a,arg])
-            elif i==11:
-                if loops:
-                    if loops[-1][1]>1:loops[-1][1]-=1;a=loops[-1][0]
-                    else:loops.pop()
-                else:break
+            elif i==10:pass   # arg 2 in sounds 6/26/28/62: measured in the emulator (Paula log of sound 26), the block after it plays ONCE, it is not a repeat count
+            elif i==11:break  # end of the script (also ends the block that follows op 10)
             elif i==14:trans+=arg if arg<128 else arg-256
             elif i==15:trans=arg if arg<128 else arg-256
             elif i==20:inst=arg

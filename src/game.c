@@ -662,7 +662,7 @@ static void exec_verb(Game *g, int verb) {
             g->ch_cont[ci] = 0;
         }
         if (!(ch->flags & 1)) {
-            ch->flags |= 1; play_sound(g, 0x0a);
+            ch->flags |= 1; play_sound(g, 0x38);
             for (int i = 0; i < g->nvm; i++) if (g->vm_pid[i] == ch->pid) run_script(g, ch, g->vm_code[i], g->vm_len[i]);
         } else say(g, 4);
         return;
