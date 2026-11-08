@@ -345,4 +345,17 @@ for s_ in range(255):
     sn.append((s_,e[0x1e]))
 P('B',1);P('H',len(sn))
 for t in sn:P('BB',*t)
+# creature health (optional, after the appearance sounds): the missile hit code $f7b2 subtracts the attacker's damage (its part byte +1) from the target's part byte +0;
+# the target is immune when its part byte +5 has the attacker's damage-type bit (the stone is type 0) and invulnerable when part byte +6 bit 0 is set. At <= 0 event $17 (death) is posted.
+ch=[]
+for pid in range(1024):
+    pr=L.g6.rec(pid)
+    if len(pr)<16:continue
+    e=L.g2.rec(u16(pr,6))
+    if not e or len(e)<0x30 or not e[0x0c]&4 or e[0x16]!=3:continue
+    q=pr[0xc]
+    if q==0 or q+8>len(pr):continue
+    ch.append((pid,pr[q],pr[q+5],pr[q+6]))
+P('B',1);P('H',len(ch))
+for t in ch:P('HBBB',*t)
 open(out,'wb').write(o);print(len(o),'bytes,',len(exam),'examine texts')
