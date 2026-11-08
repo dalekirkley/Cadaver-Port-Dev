@@ -603,7 +603,7 @@ static void build_verbs(Game *g) {
     Room *r = &g->rooms[g->cur]; g->nverbs = 0;
     if (g->target < 0 || !g->has_icons) return;
     const Obj *o = &r->objs[g->target]; const Sprite *s = &g->spr[o->slot]; int *v = g->verbs, n = 0;
-    if (g->inv_hold >= 0) for (int i = 0; i < g->nuo; i++) if (g->uo_pid[i] == o->pid && g->uo_item[i] == g->inv_hold) { v[n++] = 12; break; }   /* use the held item on this object ($a036): only when it has a block for it */
+    if (g->inv_hold >= 0) for (int i = 0; i < g->nuo; i++) if (g->uo_pid[i] == o->pid && (g->uo_item[i] == g->inv_hold || g->uo_item[i] == (0x4000 | g->inv_hold))) { v[n++] = g->uo_item[i] & 0x4000 ? 15 : 12; break; }   /* use the held item on this object ($a036): only when it has a block for it */
     if ((s->c & 2) && !(o->xflags & 4)) v[n++] = 2;                                   /* take */
     if (s->b17 && !(o->xflags & 0x40) && g->verbtab[s->b17 & 15] < 20) v[n++] = g->verbtab[s->b17 & 15];
     if (s->b1d == 0x12) v[n++] = 0xe;
@@ -709,10 +709,10 @@ static void exec_verb(Game *g, int verb) {
         } else say(g, 4);
         return;
     }
-    if (verb == 12) {                                                                 /* use the held item on the target: sound $1e, then the target's event-0x12 block for that item */
+    if (verb == 12 || verb == 15) {                                                                 /* use the held item on the target: sound $1e, then the target's event-0x12 block for that item */
         Obj *ob = &r->objs[g->target]; int pid = ob->pid, it = g->inv_hold;
-        play_sound(g, 0x1e); g->menu = 0; g->nverbs = 0;
-        for (int i = 0; i < g->nuo; i++) if (g->uo_pid[i] == pid && g->uo_item[i] == it) { run_script(g, &g->rooms[g->cur].objs[g->target], g->uo_code[i], g->uo_len[i]); break; }
+        if (verb == 12) play_sound(g, 0x1e); g->menu = 0; g->nverbs = 0;
+        for (int i = 0; i < g->nuo; i++) if (g->uo_pid[i] == pid && g->uo_item[i] == (verb == 15 ? (0x4000 | it) : it)) { run_script(g, &g->rooms[g->cur].objs[g->target], g->uo_code[i], g->uo_len[i]); break; }
         g->target = -1;
         return;
     }
