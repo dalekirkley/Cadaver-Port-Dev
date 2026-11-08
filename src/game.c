@@ -1,7 +1,7 @@
 #include "game.h"
 #include "sound_table.h"
 #include "sound_seq.h"
-#define SND_TICK_SEC 0.005      /* seconds per script tick: the original rate is not known (0.02 would be one 50 Hz frame); tune by ear */
+#define SND_TICK_SEC 0.02       /* seconds per script tick = one 50 Hz frame; measured on the locked-door sound $3c in the emulator (Paula log): two 2-tick notes last 2 video frames each, then the 3rd sample plays to its end */
 #define SND_MAX_SEC 4.0         /* a script never runs longer than this */
 #include <stdio.h>
 #include <stdlib.h>
