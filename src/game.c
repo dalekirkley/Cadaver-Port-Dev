@@ -335,6 +335,10 @@ static Obj *find_obj(Game *g, int pid) {
     for (int rm = 0; rm < 100; rm++) { Room *r = &g->rooms[rm]; if (!r->valid) continue; for (int i = 0; i < r->nobj; i++) if (r->objs[i].pid == pid) return &r->objs[i]; }
     return NULL;
 }
+static void creature_hit_sound(Game *g, const Obj *q) {
+    static const uint8_t hit_snd[19] = { 9, 9, 9, 13, 13, 9, 19, 9, 9, 9, 19, 9, 13, 9, 9, 13, 13, 19, 9 };    /* victim's hit sound, table $5bf8 indexed by type byte +$1d */
+    int ty = g->spr[q->slot].b1d; play_sound(g, ty >= 0 && ty < 19 ? hit_snd[ty] : 0x1a);
+}
 typedef struct { Game *g; Obj *self; const uint8_t *c; int len, p, cond, stop; } Vm;
 static int vm_word(Vm *m) { int v = (m->c[m->p] << 8) | m->c[m->p + 1]; m->p += 2; return v; }
 static void vm_op(Vm *m, int op);
@@ -397,7 +401,7 @@ static void vm_op(Vm *m, int op) {
         m->cond = in ? m->cond + 1 : 0; break; }
     case 0x15: { int id = vm_word(m); Obj *q = id >= 0x8000 ? m->self : find_obj(g, id); if (q) q->flags &= ~2; break; }   /* clear placement flag bit 1 ($1030c) */
     case 0x32: { int id = vm_word(m); Obj *q = id >= 0x8000 ? m->self : find_obj(g, id);                            /* post the destroy event (0x17) to an object ($1002c): it is removed */
-        if (q && q != &g->hero) q->life = -1; break; }
+        if (q && q != &g->hero) { if (q->dying > 0) break; if (g->spr[q->slot].nfr > 1) { q->dying = 14; q->aon = 0; creature_hit_sound(g, q); } else q->life = -1; } break; }   /* creatures die with a sound and a blink */
     case 0x06: { int n = m->c[m->p++]; g->xp += n; g->gold += n >> 2; play_sound(g, 3); break; }                       /* experience (and a quarter of it as gold) ($ffdc) */
     case 0x4a: { int id = vm_word(m);                                                                              /* reveal a hidden object ($10068) */
         for (int i = 0; i < g->nhid; i++) if (g->hid[i].o.pid == id) {
@@ -687,8 +691,7 @@ static void update_missiles(Game *g) {
                 if (has_contact_script(g, q)) {
                     if (q->hp <= 0) q->hp = CREATURE_HP;
                     q->hp -= ROCK_POWER;
-                    { static const uint8_t hit_snd[19] = { 9, 9, 9, 13, 13, 9, 19, 9, 9, 9, 19, 9, 13, 9, 9, 13, 13, 19, 9 };    /* victim's hit sound, table $5bf8 indexed by type byte +$1d */
-                      int ty = g->spr[q->slot].b1d; play_sound(g, ty >= 0 && ty < 19 ? hit_snd[ty] : 0x1a); }
+                    creature_hit_sound(g, q);
                     if (q->hp <= 0) { q->dying = 14; q->aon = 0; }   /* killed: freezes and blinks for 14 ticks, then is removed (the death script hides it; the exact original effect is not measured) */
                 }
                 dead = 1; break;
