@@ -128,7 +128,7 @@ for n in range(100):
     if r:P('Bh',r['raw'][0x1a] if r['raw'][0x1a]>=100 else r['raw'][0x1a]+nb,s16(r['raw'],0x18))
     else:P('Bh',255,-1)
 # verb icons (16x14, plane-major 4 planes of 14 words, 20 icons) + slot table ($59a6: x,y,w,h words) + verb->icon list for $17 types ($5604)
-ip=os.environ.get('CADAVER_ICONS')
+ip=os.environ.get('CADAVER_ICONS') or os.path.join(os.path.dirname(os.path.abspath(__file__)),'verb_icons.bin')   # the 20 verb icons ship with the tools; without them the interaction menu has no verbs
 if ip and os.path.exists(ip):
     P('B',1);o+=open(ip,'rb').read()[:20*112];o+=bytes(L.game[0x59a6-0xb8:0x59a6-0xb8+64]);o+=bytes(L.game[0x5604-0xb8:0x5604-0xb8+16])
 else:P('B',0)
