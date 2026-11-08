@@ -409,7 +409,7 @@ static void vm_op(Vm *m, int op) {
         if (!got) return;
         o2.flags &= ~0x90; o2.x = x; o2.y = y; o2.z = (z >= 0x40 && !(g->lvl1 && o2.slot == 119)) ? 0 : z; o2.anim = g->spr[o2.slot].nfr >= 10 ? 8 : 0; o2.atick = 8; o2.stage = 0; o2.skey = skey; cr->objs[cr->nobj++] = o2; if (g->spawn_snd[o2.slot & 255]) play_sound(g, g->spawn_snd[o2.slot & 255] - 1); break; }
     case 0x25: { int n = m->c[m->p], dx = m->c[m->p + 1], dy = m->c[m->p + 2], dz = m->c[m->p + 3]; m->p += 4; play_sound(g, 0x15);   /* teleport the hero into room n at an offset from its origin ($10546) */
-        if (n < 100 && g->rooms[n].valid) { g->cur = n; g->hero.x = MARGIN + HERO_FX + dx; g->hero.y = MARGIN + HERO_FY + dy; g->hero.z = dz; }
+        if (n < 100 && g->rooms[n].valid) { g->cur = n; g->hero.x = dx * 8 < MARGIN + HERO_FX ? MARGIN + HERO_FX : dx * 8; g->hero.y = dy * 8 < MARGIN + HERO_FY ? MARGIN + HERO_FY : dy * 8; g->hero.z = dz;   /* offsets are in 8-unit cells: the room-4 pit lands the hero at (64,24) in the emulator */ }
         break; }
     case 0x29: { int id = vm_word(m); if (id >= 0x8000) id = m->self->pid; int rm = m->c[m->p], x = m->c[m->p + 1], y = m->c[m->p + 2], z = m->c[m->p + 3]; m->p += 4;   /* move an object (or rucksack item) to room rm ($10668) */
         Obj o2; int got = 0;
