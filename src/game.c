@@ -18,7 +18,7 @@
 #define WALK_TICKS_PER_FRAME 3   /* measured in the original: 6 video frames per walk frame */
 
 typedef struct { int len; int8_t *data; } Sfx;
-typedef struct { int sfx; double pos, step; int vol, snd; double left, total; } Voice;
+typedef struct { int sfx; double pos, step; double vol; int snd; double left, total; } Voice;
 typedef struct { const SndEv *ev; int n, i, mv, snd; double t, el; } SeqVoice;   /* left = seconds before the voice is cut (0 = play to the end) */
 typedef struct { int state, w, h; int16_t f[5]; int push; int16_t fx, fy, fz, name; uint8_t c, b16, b17, b1d; uint8_t *px; int aw, ah, ax, ay, f0x, f0y, creature; uint8_t *apx; int nfr; struct { int w, h, dx, dy; uint8_t *px; } fr[16]; } Sprite;
 typedef struct { int16_t hx, hy; int w, h; uint8_t *px; } Frame;
@@ -47,7 +47,7 @@ struct Game {
     Obj hero;                         /* hero.slot = 8 */
     int facing, anim_t, moving;
     uint8_t font[46 * 24], fontmap[32]; char **text; int ntext; int day; int energy; int jump_t, jump_z0;
-    int has_scroll, old_data; uint8_t cons_ok[1024], cons_eff[1024], cons_amt[1024], cons_left[1024], cons_fl[1024]; int poison, poison_t, prot, prot_amt, atk_mask; uint8_t cre_hp[1024], cre_imm[1024], cre_fl6[1024], cre_ok[1024], spawn_snd[256], mvstate[1024], kill_ok[1024], kill_rew[1024], kill_fl[1024];   /* 0 = unknown, else movement state + 1 (3 = chase the hero) */  uint8_t scroll_tiles[18 * 32], scroll_map[0x30], font5[46 * 20]; int nexam, nuse, ntake; uint16_t take_pid[512]; int16_t take_gold[512], take_xp[512]; uint8_t counter[256], gflag[256]; uint32_t gbits; int nhid; struct { int room; Obj o; } hid[1024]; int hurt_cd, touch_snd, touch_seen; unsigned rng_seed, rng_last; int ent_tick; uint8_t rs_done[100][16]; uint8_t *aprog[256]; int aprog_len[256], asec[256][4], asec_n[256]; struct { uint8_t has, mode, frame, rev, pc, cnt, rel; } plan[1024]; int want_level; int pull_pid, pull_room; int spawn_pid; int rs_period[100], rs_nb[100]; uint8_t *rs_blk[100][16]; int tm_room, tm_left; uint8_t mv_prog[1024][96]; uint8_t mv_len[1024], mv_step[1024][3], mv_pat[1024]; int lvl1; int nch; uint16_t ch_pid[64], ch_cont[64], ch_key[64]; uint8_t ch_flags[64], ch_trap[64]; int dbg, dbg_verb, dbg_pid, dbg_ran, dbg_execs; unsigned dbg_log[4][3]; unsigned char dbg_tr[48]; int dbg_ntr; int nvm; uint16_t vm_pid[256]; uint8_t vm_len[256], vm_code[256][255]; uint16_t exam_pid[512], exam_text[512], use_pid[512], use_text[512];   /* examine scroll */
+    int has_scroll, old_data; uint8_t cons_ok[1024], cons_eff[1024], cons_amt[1024], cons_left[1024], cons_fl[1024]; unsigned aud_seed; int poison, poison_t, prot, prot_amt, atk_mask; uint8_t cre_hp[1024], cre_imm[1024], cre_fl6[1024], cre_ok[1024], spawn_snd[256], mvstate[1024], kill_ok[1024], kill_rew[1024], kill_fl[1024];   /* 0 = unknown, else movement state + 1 (3 = chase the hero) */  uint8_t scroll_tiles[18 * 32], scroll_map[0x30], font5[46 * 20]; int nexam, nuse, ntake; uint16_t take_pid[512]; int16_t take_gold[512], take_xp[512]; uint8_t counter[256], gflag[256]; uint32_t gbits; int nhid; struct { int room; Obj o; } hid[1024]; int hurt_cd, touch_snd, touch_seen; unsigned rng_seed, rng_last; int ent_tick; uint8_t rs_done[100][16]; uint8_t *aprog[256]; int aprog_len[256], asec[256][4], asec_n[256]; struct { uint8_t has, mode, frame, rev, pc, cnt, rel; } plan[1024]; int want_level; int pull_pid, pull_room; int spawn_pid; int rs_period[100], rs_nb[100]; uint8_t *rs_blk[100][16]; int tm_room, tm_left; uint8_t mv_prog[1024][96]; uint8_t mv_len[1024], mv_step[1024][3], mv_pat[1024]; int lvl1; int nch; uint16_t ch_pid[64], ch_cont[64], ch_key[64]; uint8_t ch_flags[64], ch_trap[64]; int dbg, dbg_verb, dbg_pid, dbg_ran, dbg_execs; unsigned dbg_log[4][3]; unsigned char dbg_tr[48]; int dbg_ntr; int nvm; uint16_t vm_pid[256]; uint8_t vm_len[256], vm_code[256][255]; uint16_t exam_pid[512], exam_text[512], use_pid[512], use_text[512];   /* examine scroll */
     int scroll_t; char scroll_str[256]; long score; int map_open, map_px, map_py, status_open; long gold, xp, level; uint8_t visited[100];
     int has_icons; uint8_t icons[20 * 112]; uint16_t slotpos[8][4]; uint8_t verbtab[16];
     int target, nverbs, verbs[8], menu, sel, prev_joy, msg, msg_t, ninv, inv[64], inv_slot[64], inv_mode, inv_sel, inv_hold;     /* verb menu state */
@@ -209,7 +209,7 @@ void game_hero(const Game *g, int *x, int *y, int *z) { *x = g->hero.x; *y = g->
 
 /* ---------------------------------------------------------------- sound */
 /* Original Paula clock: 3546895 / period = sample rate; volume is Paula's 0..64. */
-static int play_voice(Game *g, int id, int period, int vol, double seconds) {
+static int play_voice(Game *g, int id, int period, double vol, double seconds) {
     if (id < 0 || id >= 74 || (id < 65 && !g->sfx[id].len)) return -1;
     int v = 0; for (int i = 0; i < 4; i++) if (!g->voice[i].step) { v = i; break; }
     g->voice[v].sfx = id; g->voice[v].pos = 0; g->voice[v].step = 3546895.0 / period; g->voice[v].vol = vol; g->voice[v].left = seconds; g->voice[v].total = seconds; return v;
@@ -232,16 +232,19 @@ static void play_sound(Game *g, int snd) {
     }
 }
 
+/* Audio-only random in -1..1 (kept apart from the simulation's generator): footsteps vary +-2% in volume. */
+static double audio_rand(Game *g) { g->aud_seed = g->aud_seed * 1664525u + 1013904223u; return ((g->aud_seed >> 8) & 0xffff) / 32767.5 - 1.0; }
+
 void game_audio_mix(Game *g, int16_t *out, int n, int rate) {
     for (int i = 0; i < n; i++) {
-        int acc = 0;
+        double accl = 0, accr = 0;
         for (int q = 0; q < 8; q++) {                                           /* note sequencers */
             SeqVoice *sq = &g->sq[q]; if (!sq->ev) continue;
             if ((sq->t -= 1.0 / rate) > 0) continue;
             if (sq->i >= sq->n) { sq->ev = NULL; continue; }
             const SndEv *e = &sq->ev[sq->i]; int last = sq->i == sq->n - 1;
             if (sq->mv >= 0) g->voice[sq->mv].step = 0;
-            if (e->sample >= 0) sq->mv = play_voice(g, e->sample, e->period, e->vol, (last && e->sample < 65) ? (sq->snd == 0 ? 0.1 : 0.6) : e->ticks * SND_TICK_SEC); else sq->mv = -1;
+            if (e->sample >= 0) sq->mv = play_voice(g, e->sample, e->period, sq->snd == 0 ? e->vol * (1.0 + 0.02 * audio_rand(g)) : (double)e->vol, (last && e->sample < 65) ? (sq->snd == 0 ? 0.1 : 0.6) : e->ticks * SND_TICK_SEC); else sq->mv = -1;
             if (sq->mv >= 0) g->voice[sq->mv].snd = sq->snd + 1;
             sq->t += e->ticks * SND_TICK_SEC; sq->i++; sq->el += e->ticks * SND_TICK_SEC; if (sq->el > SND_MAX_SEC) sq->i = sq->n;
         }
@@ -250,12 +253,13 @@ void game_audio_mix(Game *g, int16_t *out, int n, int rate) {
             int syn = vo->sfx >= 65, p = (int)vo->pos, len, sv;
             if (syn) { len = SYN_LEN[vo->sfx - 65]; if (!len) { vo->step = 0; continue; } p %= len; sv = SYN_DATA[vo->sfx - 65][p]; if (vo->left > 0 && vo->total > 0) sv = (int)(sv * (vo->left / vo->total)); }   /* synth note: looped cycle with a linear fade */
             else { const Sfx *s = &g->sfx[vo->sfx]; if (p >= s->len) { vo->step = 0; continue; } sv = s->data[p]; }
-            acc += sv * vo->vol; vo->pos += vo->step / rate;
+            if (v == 0 || v == 3) accl += sv * vo->vol; else accr += sv * vo->vol;   /* Paula: voices 0 and 3 left, 1 and 2 right */
+             vo->pos += vo->step / rate;
             if (syn && vo->pos >= 1e9) vo->pos = 0;
             if (vo->left > 0 && (vo->left -= 1.0 / rate) <= 0) vo->step = 0;
         }
-        acc = acc * 4; if (acc > 32767) acc = 32767; if (acc < -32768) acc = -32768;
-        out[i] = (int16_t)acc;
+        double x = (accl + accr) * 4.0, ax = fabs(x); if (ax > 6000.0) { ax = 6000.0 + 6000.0 * tanh((ax - 6000.0) / 6000.0); x = x < 0 ? -ax : ax; }   /* mono downmix of Paula's two sides; quiet sounds stay as they were, loud stacked voices (menu confirm, pickups) are compressed towards 12000 */
+        out[i] = (int16_t)x;
     }
 }
 
