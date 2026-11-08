@@ -1019,6 +1019,16 @@ void game_tick(Game *g, int joy) {
         else { h->z = nz; if (++g->jump_t > 20) g->jump_t = 0; }
     }
     else hero_gravity(g, r);
+    /* Pits (floor objects with type bits 0x48): the hero standing over one posts room event 0x0f, which teleports him down (op 0x25). */
+    if (!g->jump_t) {
+        Obj *h = &g->hero; int cx = h->x - HERO_FX / 2, cy = h->y - HERO_FY / 2;
+        for (int i = 0; i < r->nobj; i++) { Obj *q = &r->objs[i]; if ((g->spr[q->slot].c & 0x48) != 0x48) continue;
+            Box qb = box_of(g, q); if (cx < qb.x0 || cx > qb.x1 || cy < qb.y0 || cy > qb.y1 || h->z > qb.z1 + 1) continue;
+            int room = g->cur;
+            for (int b = 0; b < g->rs_nb[room]; b++) { const uint8_t *c = g->rs_blk[room][b]; if ((c[1] & 0x7f) != 0x0f || c[2] != 1) continue;     /* byte 2 is the trap number, code follows */
+                Vm m = { g, &g->hero, c, c[0], 3, 0, 0 }; vm_block(&m); }
+            break; }
+    }
     /* Walking animation + footsteps, timed from an emulator trace of the original: each of the 4 walk frames is shown
        for 3 logic ticks; a footstep (sample 22, period 320, volume 8, cut after 4 video frames = 80 ms) sounds when the
        script reaches its 2nd and 4th frame (the `$fc 00` entries of the walk scripts). */
