@@ -401,7 +401,7 @@ static void vm_op(Vm *m, int op) {
     case 0x25: { int n = m->c[m->p], dx = m->c[m->p + 1], dy = m->c[m->p + 2], dz = m->c[m->p + 3]; m->p += 4; play_sound(g, 0x15);   /* teleport the hero into room n at an offset from its origin ($10546) */
         if (n < 100 && g->rooms[n].valid) { g->cur = n; g->hero.x = MARGIN + HERO_FX + dx; g->hero.y = MARGIN + HERO_FY + dy; g->hero.z = dz; }
         break; }
-    case 0x29: { int id = vm_word(m); int rm = m->c[m->p], x = m->c[m->p + 1], y = m->c[m->p + 2], z = m->c[m->p + 3]; m->p += 4;   /* move an object (or rucksack item) to room rm ($10668) */
+    case 0x29: { int id = vm_word(m); if (id >= 0x8000) id = m->self->pid; int rm = m->c[m->p], x = m->c[m->p + 1], y = m->c[m->p + 2], z = m->c[m->p + 3]; m->p += 4;   /* move an object (or rucksack item) to room rm ($10668) */
         Obj o2; int got = 0;
         for (int i = 0; i < g->ninv && !got; i++) if (g->inv[i] == id) {
             memset(&o2, 0, sizeof o2); o2.pid = id; o2.slot = g->inv_slot[i];
@@ -1029,6 +1029,17 @@ void game_tick(Game *g, int joy) {
                 Vm m = { g, &g->hero, c, c[0], 3, 0, 0 }; vm_block(&m); }
             break; }
     }
+    /* Event 0x11: a pushable object resting over a pit falls (the block's op 0x29 moves it to the room below). */
+    for (int pi = 0; pi < r->nobj; pi++) { Obj *p = &r->objs[pi]; if ((g->spr[p->slot].c & 0x48) != 0x48) continue;
+        Box pb = box_of(g, p);
+        for (int i = 0; i < r->nobj; i++) { Obj *q = &r->objs[i]; if (i == pi || (g->spr[q->slot].c & 0x48) == 0x48 || !pushable(g, q) || q->dying > 0) continue;
+            Box qb = box_of(g, q); int cx = (qb.x0 + qb.x1) / 2, cy = (qb.y0 + qb.y1) / 2;
+            if (cx < pb.x0 || cx > pb.x1 || cy < pb.y0 || cy > pb.y1 || q->z > pb.z1 + 1) continue;
+            int room = g->cur, ran = 0;
+            for (int b = 0; b < g->rs_nb[room] && !ran; b++) { const uint8_t *c = g->rs_blk[room][b]; if ((c[1] & 0x7f) != 0x11 || c[2] != 1) continue;
+                Vm m = { g, q, c, c[0], 3, 0, 0 }; vm_block(&m); ran = 1; }
+            if (ran) goto pit_done; } }
+    pit_done:;
     /* Walking animation + footsteps, timed from an emulator trace of the original: each of the 4 walk frames is shown
        for 3 logic ticks; a footstep (sample 22, period 320, volume 8, cut after 4 video frames = 80 ms) sounds when the
        script reaches its 2nd and 4th frame (the `$fc 00` entries of the walk scripts). */
