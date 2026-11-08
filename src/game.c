@@ -100,7 +100,7 @@ Game *game_load(const char *path) {
         int no = rd16(f); r->objs = calloc((size_t)no + 32, sizeof(Obj)); r->nobj = 0; r->ocap = no + 32;
         for (int k = 0; k < no; k++) {
             Obj o; memset(&o, 0, sizeof o); o.pid = rd16(f); o.x = rd8(f); o.y = rd8(f); o.z = rd8(f); o.flags = rd8(f); o.slot = rd16(f); o.xflags = rd8(f); o.anim = 0; o.atick = 0; o.home = (int)n; o.stage = 0;
-            if ((o.flags & 0x80) || (o.flags & 0x50) == 0x10) { if (g->nhid < 1024) { g->hid[g->nhid].room = (int)n; g->hid[g->nhid++].o = o; } continue; }   /* not spawned yet: a script can bring it in */
+            if (o.flags & 0x90) { if (g->nhid < 1024) { g->hid[g->nhid].room = (int)n; g->hid[g->nhid++].o = o; } continue; }   /* not spawned yet: a script can bring it in */
             if (o.slot == 8) { g->hero = o; g->start_hero = o; g->start_room = (int)n; continue; }       /* the player placement */
             r->objs[r->nobj++] = o;
         }
@@ -351,7 +351,7 @@ static void vm_op(Vm *m, int op) {
     case 0x13: o = find_obj(g, vm_word(m)); if (o) o->flags ^= 1; break;
     case 0x01: { int id = vm_word(m);                                   /* bring a not-yet-spawned object into its room */
         for (int i = 0; i < g->nhid; i++) if (g->hid[i].o.pid == id) {
-            Room *r = &g->rooms[g->hid[i].room]; Obj o = g->hid[i].o; o.flags &= ~0x80;
+            Room *r = &g->rooms[g->hid[i].room]; Obj o = g->hid[i].o; o.flags &= ~0x90;
             r->objs[r->nobj++] = o; g->hid[i] = g->hid[--g->nhid]; break; }
         break; }
     case 0x05: { int d = m->c[m->p]; m->p++; g->gold += d; if (g->gold < 0) g->gold = 0; play_sound(g, d < 0 ? 0x24 : 0x1a); break; }   /* add gold ($ffa0) */
@@ -360,12 +360,12 @@ static void vm_op(Vm *m, int op) {
         Room *cr = &g->rooms[g->cur]; Obj o2; int got = 0;
         int skey = (x << 8 | y) + 1;                                     /* one placement can be spawned several times at different spots (3 bats in room 38); the same spot again is a repeat */
         for (int i = 0; i < cr->nobj; i++) if (cr->objs[i].pid == id) { if (cr->objs[i].skey == skey || cr->objs[i].skey == 0 || cr->nobj >= cr->ocap - 1) return; if (!got) { o2 = cr->objs[i]; got = 1; } }
-        if (got) { o2.skey = skey; o2.flags &= ~0x80; o2.x = x; o2.y = y; o2.z = (z >= 0x40 && !(g->lvl1 && o2.slot == 119)) ? 0 : z; o2.stage = 0; o2.mpc = o2.mwait = o2.mstop = 0; memset(o2.mc, 0, sizeof o2.mc); cr->objs[cr->nobj++] = o2; break; }
+        if (got) { o2.skey = skey; o2.flags &= ~0x90; o2.x = x; o2.y = y; o2.z = (z >= 0x40 && !(g->lvl1 && o2.slot == 119)) ? 0 : z; o2.stage = 0; o2.mpc = o2.mwait = o2.mstop = 0; memset(o2.mc, 0, sizeof o2.mc); cr->objs[cr->nobj++] = o2; break; }
         for (int i = 0; i < g->nhid && !got; i++) if (g->hid[i].o.pid == id) { o2 = g->hid[i].o; g->hid[i] = g->hid[--g->nhid]; got = 1; }
         for (int rm = 0; rm < 100 && !got; rm++) { Room *r2 = &g->rooms[rm]; if (!r2->valid || rm == g->cur) continue;
             for (int i = 0; i < r2->nobj; i++) if (r2->objs[i].pid == id) { o2 = r2->objs[i]; r2->objs[i] = r2->objs[--r2->nobj]; got = 1; break; } }
         if (!got) return;
-        o2.flags &= ~0x80; o2.x = x; o2.y = y; o2.z = (z >= 0x40 && !(g->lvl1 && o2.slot == 119)) ? 0 : z; o2.anim = g->spr[o2.slot].nfr >= 10 ? 8 : 0; o2.atick = 8; o2.stage = 0; o2.skey = skey; cr->objs[cr->nobj++] = o2; break; }
+        o2.flags &= ~0x90; o2.x = x; o2.y = y; o2.z = (z >= 0x40 && !(g->lvl1 && o2.slot == 119)) ? 0 : z; o2.anim = g->spr[o2.slot].nfr >= 10 ? 8 : 0; o2.atick = 8; o2.stage = 0; o2.skey = skey; cr->objs[cr->nobj++] = o2; break; }
     case 0x25: { int n = m->c[m->p], dx = m->c[m->p + 1], dy = m->c[m->p + 2], dz = m->c[m->p + 3]; m->p += 4;   /* teleport the hero into room n at an offset from its origin ($10546) */
         if (n < 100 && g->rooms[n].valid) { g->cur = n; g->hero.x = MARGIN + HERO_FX + dx; g->hero.y = MARGIN + HERO_FY + dy; g->hero.z = dz; }
         break; }
@@ -380,7 +380,7 @@ static void vm_op(Vm *m, int op) {
         for (int i = 0; i < g->nhid && !got; i++) if (g->hid[i].o.pid == id) { o2 = g->hid[i].o; g->hid[i] = g->hid[--g->nhid]; got = 1; }
         for (int r2 = 0; r2 < 100 && !got; r2++) { Room *q = &g->rooms[r2]; if (!q->valid) continue;
             for (int i = 0; i < q->nobj; i++) if (q->objs[i].pid == id) { o2 = q->objs[i]; q->objs[i] = q->objs[--q->nobj]; got = 1; break; } }
-        if (got && rm < 100 && g->rooms[rm].valid && g->rooms[rm].nobj < 4000) { o2.x = x; o2.y = y; o2.z = z; o2.flags &= ~0x80; g->rooms[rm].objs[g->rooms[rm].nobj++] = o2; }
+        if (got && rm < 100 && g->rooms[rm].valid && g->rooms[rm].nobj < 4000) { o2.x = x; o2.y = y; o2.z = z; o2.flags &= ~0x90; g->rooms[rm].objs[g->rooms[rm].nobj++] = o2; }
         break; }
     case 0x26: { int n = m->c[m->p], v = m->c[m->p + 1]; m->p += 2; g->counter[n] = (uint8_t)v; break; }              /* set counter n ($1078c) */
     case 0x30: m->cond = m->cond == 0; vm_op(m, 0x0e); break;                                              /* block runs when the condition FAILED ($10222) */
@@ -397,7 +397,7 @@ static void vm_op(Vm *m, int op) {
     case 0x06: { int n = m->c[m->p++]; g->xp += n; g->gold += n >> 2; play_sound(g, 3); break; }                       /* experience (and a quarter of it as gold) ($ffdc) */
     case 0x4a: { int id = vm_word(m);                                                                              /* reveal a hidden object ($10068) */
         for (int i = 0; i < g->nhid; i++) if (g->hid[i].o.pid == id) {
-            Room *r2 = &g->rooms[g->hid[i].room]; Obj o2 = g->hid[i].o; o2.flags &= ~0x80;
+            Room *r2 = &g->rooms[g->hid[i].room]; Obj o2 = g->hid[i].o; o2.flags &= ~0x90;
             r2->objs[r2->nobj++] = o2; g->hid[i] = g->hid[--g->nhid]; break; }
         break; }
     case 0x1a: { int id = vm_word(m); Obj *q = id >= 0x8000 ? m->self : find_obj(g, id); if (q && q != &g->hero) q->life = -1; break; }   /* despawn an object ($fea4) */
@@ -566,7 +566,7 @@ static void exec_verb(Game *g, int verb) {
             for (int rm = 0; rm < 100 && !got; rm++) { Room *r2 = &g->rooms[rm]; if (!r2->valid || rm == g->cur) continue;
                 for (int i = 0; i < r2->nobj; i++) if (r2->objs[i].pid == id) { o2 = r2->objs[i]; r2->objs[i] = r2->objs[--r2->nobj]; got = 1; break; } }
             if (got) {                                                                  /* pop out beside the chest (far side from the hero first), else on its lid */
-                o2.flags &= ~0x80; const Sprite *cs = &g->spr[ch->slot], *is = &g->spr[o2.slot];
+                o2.flags &= ~0x90; const Sprite *cs = &g->spr[ch->slot], *is = &g->spr[o2.slot];
                 int fdx = (g->facing & JOY_RIGHT) ? 1 : (g->facing & JOY_LEFT) ? -1 : 0, fdy = (g->facing & JOY_DOWN) ? 1 : (g->facing & JOY_UP) ? -1 : 0;
                 int cand[4][2] = { { fdx, fdy }, { fdy, fdx }, { -fdy, -fdx }, { -fdx, -fdy } }, placed = 0;
                 for (int c = 0; c < 4 && !placed; c++) {
