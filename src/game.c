@@ -47,7 +47,7 @@ struct Game {
     Obj hero;                         /* hero.slot = 8 */
     int facing, anim_t, moving;
     uint8_t font[46 * 24], fontmap[32]; char **text; int ntext; int day; int energy; int jump_t, jump_z0;
-    int has_scroll, old_data; uint8_t spl_ok[1024], spl_no[1024], spl_pow[1024], spl_fl[1024], spl_chg[1024]; uint8_t cons_ok[1024], cons_eff[1024], cons_amt[1024], cons_left[1024], cons_fl[1024]; int flash_t, tmr_t; uint8_t tmr[64]; unsigned aud_seed; int poison, poison_t, prot, prot_amt, atk_mask; uint8_t cre_hp[1024], cre_imm[1024], cre_fl6[1024], cre_ok[1024], spawn_snd[256], mvstate[1024], kill_ok[1024], kill_rew[1024], kill_fl[1024];   /* 0 = unknown, else movement state + 1 (3 = chase the hero) */  uint8_t scroll_tiles[18 * 32], scroll_map[0x30], font5[46 * 20]; int nexam, nuse, ntake; uint16_t take_pid[512]; int16_t take_gold[512], take_xp[512]; uint8_t counter[256], gflag[256]; uint32_t gbits; int nhid; struct { int room; Obj o; } hid[1024]; int hurt_cd, touch_snd, touch_seen; unsigned rng_seed, rng_last; int ent_tick; uint8_t rs_done[100][16]; uint8_t *aprog[256]; int aprog_len[256], asec[256][4], asec_n[256]; struct { uint8_t has, mode, frame, rev, pc, cnt, rel; } plan[1024]; int want_level; int pull_pid, pull_room; int spawn_pid; int rs_period[100], rs_nb[100]; uint8_t *rs_blk[100][16]; int tm_room, tm_left; uint8_t mv_prog[1024][96]; uint8_t mv_len[1024], mv_step[1024][3], mv_pat[1024]; int lvl1; int nch; uint16_t ch_pid[64], ch_cont[64], ch_key[64]; uint8_t ch_flags[64], ch_trap[64]; int dbg, dbg_verb, dbg_pid, dbg_ran, dbg_execs; unsigned dbg_log[4][3]; unsigned char dbg_tr[48]; int dbg_ntr; int nvm; uint16_t vm_pid[256]; uint8_t vm_len[256], vm_code[256][255]; uint16_t exam_pid[512], exam_text[512], use_pid[512], use_text[512];   /* examine scroll */
+    int has_scroll, old_data; uint8_t spl_ok[1024], spl_no[1024], spl_pow[1024], spl_fl[1024], spl_chg[1024]; uint8_t cons_ok[1024], cons_eff[1024], cons_amt[1024], cons_left[1024], cons_fl[1024]; int flash_t, tmr_t; uint8_t tmr[64]; unsigned aud_seed; int poison, poison_t, prot, prot_amt, atk_mask; uint8_t cre_hp[1024], cre_imm[1024], cre_fl6[1024], cre_ok[1024], spawn_snd[256], mvstate[1024], kill_ok[1024], kill_rew[1024], kill_fl[1024];   /* 0 = unknown, else movement state + 1 (3 = chase the hero) */  uint8_t scroll_tiles[18 * 32], scroll_map[0x30], font5[46 * 20]; int nexam, nuse, ntake; uint16_t take_pid[512]; int16_t take_gold[512], take_xp[512]; uint8_t counter[256], gflag[256], on_pl[1024]; uint32_t gbits; int nhid; struct { int room; Obj o; } hid[1024]; int hurt_cd, touch_snd, touch_seen; unsigned rng_seed, rng_last; int ent_tick; uint8_t rs_done[100][16]; uint8_t *aprog[256]; int aprog_len[256], asec[256][4], asec_n[256]; struct { uint8_t has, mode, frame, rev, pc, cnt, rel; } plan[1024]; int want_level; int pull_pid, pull_room; int spawn_pid; int rs_period[100], rs_nb[100]; uint8_t *rs_blk[100][16]; int tm_room, tm_left; uint8_t mv_prog[1024][96]; uint8_t mv_len[1024], mv_step[1024][3], mv_pat[1024]; int lvl1; int nch; uint16_t ch_pid[64], ch_cont[64], ch_key[64]; uint8_t ch_flags[64], ch_trap[64]; int dbg, dbg_verb, dbg_pid, dbg_ran, dbg_execs; unsigned dbg_log[4][3]; unsigned char dbg_tr[48]; int dbg_ntr; int nvm; uint16_t vm_pid[256]; uint8_t vm_len[256], vm_code[256][255]; uint16_t exam_pid[512], exam_text[512], use_pid[512], use_text[512];   /* examine scroll */
     int scroll_t; char scroll_str[256]; long score; int map_open, map_px, map_py, status_open; long gold, xp, level; uint8_t visited[100];
     int has_icons; uint8_t icons[20 * 112]; uint16_t slotpos[8][4]; uint8_t verbtab[16];
     int target, nverbs, verbs[8], menu, sel, prev_joy, msg, msg_t, ninv, inv[64], inv_slot[64], inv_mode, inv_sel, inv_hold;     /* verb menu state */
@@ -478,7 +478,7 @@ static void vm_op(Vm *m, int op) {
         break; }
     case 0x00: case 0x08: { int id = vm_word(m); Obj *q = id >= 0x8000 ? m->self : find_obj(g, id); if (q && q != &g->hero) q->life = -1; break; }   /* 00: retire an object into the original's removed-objects list ($fd86, max 20; un-holds it); 08: hide it unless already hidden ($10004). Both: gone from the room */
     case 0x03: { int id = vm_word(m); Obj *q = id >= 0x8000 ? m->self : find_obj(g, id);                          /* 03: restart a finished animation program ($fecc): state $fe -> 0 and the program moves past its f9 step */
-        if (q && q->aon && q->amode == 0xfe) { q->amode = 0; q->apc++; }
+        if (q && q->aon && q->amode == 0xfe) { q->amode = 0; q->apc++; q->flags ^= 1; }          /* the state byte +3 counts the presses: bit 0 is the state tested by op 1e */
         break; }
     case 0x02: if (m->self && m->self != &g->hero) m->self->life = -1; break;                                   /* 02: the same for the event's own object ($febe) */
     case 0x4f: { int lo = m->c[m->p], hi = m->c[m->p + 1]; m->p += 2;                                           /* random number lo..hi stored for op 50 ($10a7c, generator $1109c: seed word $46e) */
@@ -910,6 +910,7 @@ static void creature_move(Game *g, Room *r, Obj *c) {
 /* Animation program stepper, a port of the original's $a97c (see animation-tokens.md). Program = 2-byte steps (token or 0, operand); 00 NN shows frame NN,
    fe n waits n steps, fd restarts, fc n jumps, fb/fa reverse/forward, f9/ff end; f8..f3 are behaviour hooks (ignored here). The speed divider (reload) lets the
    program advance only every reload+1 ticks. A creature's facing selects one of its four walking sections (-x, +y, -y, +x in program order). */
+static int g_post0d;                                                  /* set by token f8: the object posts event 0x0d (its own script block runs) */
 static void anim_step(Game *g, Obj *c) {
     const uint8_t *pr = g->aprog[c->slot]; int n = g->aprog_len[c->slot]; if (!pr || n <= 0) return;
     if (g->asec_n[c->slot] == 4 && c->mdir != c->adir) { static const int sec[4] = { 0, 2, 3, 1 }; c->adir = c->mdir; c->apc = g->asec[c->slot][sec[c->mdir & 3]]; c->amode = 0; c->arev = 0; }
@@ -926,6 +927,7 @@ static void anim_step(Game *g, Obj *c) {
         case 0xfb: c->arev = 1; d7 -= 2; break;
         case 0xfa: c->arev = 0; d7 += 1; break;
         case 0xf9: mode = 0xfe; ret = 1; break;
+        case 0xf8: g_post0d = 1; d7 += 1; break;
         default: d7 += 1; break;
         }
         c->apc = d7 < 0 ? 0 : d7;
@@ -952,7 +954,7 @@ void game_tick(Game *g, int joy) {
             for (int b = 0; b < g->rs_nb[room]; b++) { const uint8_t *c = g->rs_blk[room][b]; if ((c[1] & 0x7f) != ev) continue;
                 Vm m = { g, &g->hero, c, c[0], 2, 0, 0 }; vm_block(&m); }
         }
-        { int n0 = g->rooms[g->cur].nobj;                    /* event 0xd scripts (posted by an object's animation program; here run once on entry): the dragon spawns its flame this way */
+        if (g->lvl1) { int n0 = g->rooms[g->cur].nobj;                    /* event 0xd scripts (posted by an object's animation program; here run once on entry): the dragon spawns its flame this way */
           for (int i = 0; i < n0; i++) { Obj self = g->rooms[g->cur].objs[i];
               for (int k = 0; k < g->nvm; k++) if (g->vm_pid[k] == (self.pid | 0x4000)) run_script(g, &self, g->vm_code[k], g->vm_len[k]); } }
         if (g->lvl1 && g->cur == 36) { static const uint8_t flame[] = { 0x24, 0x01, 0xe5, 51, 51, 38, 0xfe, 0x24, 0x01, 0xe5, 54, 51, 38, 0xfe, 0x24, 0x01, 0xe5, 57, 51, 38, 0xfe, 0x17 };   /* dragon flame (pid 485): three flames measured from the emulator (around (54,51,38)); the original spawns it from the dragon's animation event, not decoded yet */
@@ -1012,6 +1014,7 @@ void game_tick(Game *g, int joy) {
         if (--d->dying == 0) d->life = -1; }
     for (int i = 0; i < r->nobj; i++) { Obj *c = &r->objs[i]; if (c->slot < 0 || c->slot > 255 || !g->aprog[c->slot] || !c->aon) continue;      /* animation programs of creatures and props */
         anim_step(g, c);
+        if (g_post0d) { g_post0d = 0; if (!g->lvl1) { int pidd = c->pid; for (int k = 0; k < g->nvm; k++) if (g->vm_pid[k] == (pidd | 0x4000)) run_script(g, c, g->vm_code[k], g->vm_len[k]); } }
         if (!g->lvl1 || (c->slot != 111 && c->slot != 112 && c->slot != 116 && c->slot != 121)) c->anim = c->aframe;   /* level 1: the dragon, flame, worm and water lurker keep their hand logic */   /* level 1: walkers 113/117/119 follow their programs (checked against the original's stepper: 3, 2 and 2 ticks per frame; the old hand-measured table was aliased by the capture interval) */
         else if (getenv("CADAVER_ANIMCHK") && (c->aframe != c->anim || getenv("CADAVER_ANIMALL"))) fprintf(stderr, "ANIM slot %d tick %u prog %d walk/special %d\n", c->slot, g->tickno, c->aframe, c->anim); }
     for (int i = 0; i < r->nobj; i++) {                      /* water lurker (slot 116): ripples, surfaces, opens its mouth, sinks, then returns to the pool until the next timer. Frame order and timing are read off the emulator, not decoded */
@@ -1129,15 +1132,21 @@ void game_tick(Game *g, int joy) {
         else { h->z = nz; if (++g->jump_t > 20) g->jump_t = 0; }
     }
     else hero_gravity(g, r);
-    /* Pits (floor objects with type bits 0x48): the hero standing over one posts room event 0x0f, which teleports him down (op 0x25). */
-    if (!g->jump_t) {
-        Obj *h = &g->hero; int cx = h->x - HERO_FX / 2, cy = h->y - HERO_FY / 2;
-        for (int i = 0; i < r->nobj; i++) { Obj *q = &r->objs[i]; if ((g->spr[q->slot].c & 0x48) != 0x48) continue;
+    /* Pits and pressure plates (floor objects with type bits 0x48). A plate is named by a room event-0x0f block that starts with op 0x03 on it (`03 id`): the block runs once when
+       the hero steps onto that plate (the original's trap number is the plate's zone; the block names it). Over any other such object (a pit) the trap-1 block runs every tick
+       and teleports him down (op 0x25). */
+    { Obj *h = &g->hero; int cx = h->x - HERO_FX / 2, cy = h->y - HERO_FY / 2; uint8_t now[1024]; memset(now, 0, sizeof now); int pit = 0, room = g->cur;
+      for (int i = 0; i < r->nobj && !g->jump_t; i++) { Obj *q = &r->objs[i]; if ((g->spr[q->slot].c & 0x48) != 0x48) continue;
             Box qb = box_of(g, q); if (cx < qb.x0 || cx > qb.x1 || cy < qb.y0 || cy > qb.y1 || h->z > qb.z1 + 1) continue;
-            int room = g->cur;
+            int plate = 0; for (int b = 0; b < g->rs_nb[room]; b++) { const uint8_t *c = g->rs_blk[room][b]; if ((c[1] & 0x7f) == 0x0f && c[0] >= 5 && c[3] == 0x03 && ((c[4] << 8) | c[5]) == q->pid) plate = 1; }
+            if (plate && q->pid >= 0 && q->pid < 1024) now[q->pid] = 1; else pit = 1; }
+      uint8_t before[1024]; memcpy(before, g->on_pl, sizeof before); memcpy(g->on_pl, now, sizeof now);
+      for (int pid = 0; pid < 1024; pid++) if (now[pid] && !before[pid])
+            for (int b = 0; b < g->rs_nb[room]; b++) { const uint8_t *c = g->rs_blk[room][b]; if ((c[1] & 0x7f) != 0x0f || c[0] < 5 || c[3] != 0x03 || ((c[4] << 8) | c[5]) != pid) continue;
+                Vm m = { g, &g->hero, c, c[0], 3, 0, 0 }; vm_block(&m); }
+      if (pit)
             for (int b = 0; b < g->rs_nb[room]; b++) { const uint8_t *c = g->rs_blk[room][b]; if ((c[1] & 0x7f) != 0x0f || c[2] != 1) continue;     /* byte 2 is the trap number, code follows */
                 Vm m = { g, &g->hero, c, c[0], 3, 0, 0 }; vm_block(&m); }
-            break; }
     }
     /* Event 0x11: a pushable object resting over a pit falls (the block's op 0x29 moves it to the room below). */
     for (int pi = 0; pi < r->nobj; pi++) { Obj *p = &r->objs[pi]; if ((g->spr[p->slot].c & 0x48) != 0x48) continue;
