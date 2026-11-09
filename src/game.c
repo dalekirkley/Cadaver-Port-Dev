@@ -1090,7 +1090,7 @@ void game_tick(Game *g, int joy) {
         c->anim = seq[c->stage].f; c->atick = seq[c->stage].t;
     }
     for (int i = 0; i < r->nobj; i++) { Obj *c = &r->objs[i]; int sl = c->slot; if (g->lvl1 ? (sl < 113 || sl > 119 || sl == 116) : !(c->pid >= 0 && c->pid < 1024 && g->mv_len[c->pid])) continue;      /* path-following creatures */
-        if (c->z > 0 && c->slot != 118 && c->slot != 119 && c->slot != 116) c->z = c->z > 3 ? c->z - 3 : 0;          /* ground creatures that appear in mid-air (room 70's spider, z 50) drop to the floor */
+        if (c->z > 0 && c->slot != 119 && c->slot != 116) c->z = c->z > 3 ? c->z - 3 : 0;          /* ground creatures that appear in mid-air (room 70's spider, z 50) drop to the floor */
         creature_move(g, r, c);
 }
     if (g->lvl1 && g->cur == 36) { int t = (g->tickno - g->ent_tick) % 211; if ((t == 16 || t == 68) && !((g->prot >> 3) & 1)) change_energy(g, -20); }   /* the dragon's lightning hurts after the flash (unless global bit 3 $984 is set) */
@@ -1191,11 +1191,17 @@ void game_tick(Game *g, int joy) {
       for (int i = 0; i < r->nobj && !g->jump_t; i++) { Obj *q = &r->objs[i]; if ((g->spr[q->slot].c & 0x48) != 0x48) continue;
             Box qb = box_of(g, q); if (cx < qb.x0 || cx > qb.x1 || cy < qb.y0 || cy > qb.y1 || h->z > qb.z1 + 1) continue;
             int plate = 0; for (int b = 0; b < g->rs_nb[room]; b++) { const uint8_t *c = g->rs_blk[room][b]; if ((c[1] & 0x7f) == 0x0f && c[0] >= 5 && c[3] == 0x03 && ((c[4] << 8) | c[5]) == q->pid) plate = 1; }
-            if (plate && q->pid >= 0 && q->pid < 1024) now[q->pid] = 1; else pit = 1; }
+            if (plate && q->pid >= 0 && q->pid < 1024) now[q->pid] = 1; else if (!g->zn_n[room]) pit = 1; }      /* with zone data the room's own zone boxes decide where the hazard is (room 70's plank is just a bridge) */
       uint8_t before[1024]; memcpy(before, g->on_pl, sizeof before); memcpy(g->on_pl, now, sizeof now);
       for (int pid = 0; pid < 1024; pid++) if (now[pid] && !before[pid])
             for (int b = 0; b < g->rs_nb[room]; b++) { const uint8_t *c = g->rs_blk[room][b]; if ((c[1] & 0x7f) != 0x0f || c[0] < 5 || c[3] != 0x03 || ((c[4] << 8) | c[5]) != pid) continue;
                 Vm m = { g, &g->hero, c, c[0], 3, 0, 0 }; vm_block(&m); }
+      if (g->zn_n[room] && !g->jump_t) { Box hb = box_of(g, h);
+            for (int zi = g->zn_n[room]; zi >= 1; zi--) { const uint8_t *z = g->zn_b[room][zi - 1];
+                if (hb.x1 < z[0] || hb.x0 > z[2] || hb.y1 < z[1] || hb.y0 > z[3] || hb.z1 < z[4] || hb.z0 > z[5]) continue;
+                for (int b = 0; b < g->rs_nb[room]; b++) { const uint8_t *c = g->rs_blk[room][b]; if ((c[1] & 0x7f) != 0x0f || c[0] < 4 || c[2] != zi || c[3] == 0x03) continue;
+                    Vm m = { g, &g->hero, c, c[0], 3, 0, 0 }; vm_block(&m); if (g->cur != room) break; }
+                if (g->cur != room) break; } }
       if (pit)
             for (int b = 0; b < g->rs_nb[room]; b++) { const uint8_t *c = g->rs_blk[room][b]; if ((c[1] & 0x7f) != 0x0f || c[2] != 1) continue;     /* byte 2 is the trap number, code follows */
                 Vm m = { g, &g->hero, c, c[0], 3, 0, 0 }; vm_block(&m); }
