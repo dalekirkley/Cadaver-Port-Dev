@@ -863,7 +863,8 @@ static void update_missiles(Game *g) {
                     if (ok && ((g->cre_imm[q->pid] & 1) || (g->cre_fl6[q->pid] & 1))) { dead = 1; break; }   /* immune to damage type 0 / invulnerable ($f7e6..$f7f8) */
                     q->hp -= ROCK_POWER;
                     if (q->hp <= 0) start_dying(g, q);
-                }
+                } else for (int e = 0; e < g->nvm; e++) if (g->vm_pid[e] == (q->pid | 0x1000)) {                 /* event 4 (hit by a moving object, $ef90): flasks and urns break and may release creatures */
+                    creature_hit_sound(g, q); run_script(g, q, g->vm_code[e], g->vm_len[e]); break; }
                 dead = 1; break;
             }
         }

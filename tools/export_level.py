@@ -172,6 +172,7 @@ for i in range(L.g6.n):
         if e[p+1]&0x7f==5:vm.append((i,bytes(e[p+2:p+ln])))
         elif e[p+1]&0x7f==9 and e[p+2:p+4]==b'\0\0':vm.append((i|0x8000,bytes(e[p+4:p+ln])))   # event 9 with the hero (placement 0) as the other party: contact scripts
         elif e[p+1]==0x07 and len(vm)<255:vm.append((i|0x2000,bytes(e[p+2:p+ln])))   # event 7 (no keep bit) on a takeable item: runs once the item has been taken (room 70: the spider appears)
+        elif e[p+1]&0x7f==4 and len(vm)<255:vm.append((i|0x1000,bytes(e[p+4:p+ln])))   # event 4: the object is hit by a moving object (missile); 2 parameter bytes (hitter type) then ops: flasks and urns break, release creatures
         elif e[p+1]&0x7f==0x0d:vm.append((i|0x4000,bytes(e[p+4:p+ln])))   # event 0xd: posted by an object's animation program (param word at +2); ops follow
         p+=ln
 P('H',len(vm))
