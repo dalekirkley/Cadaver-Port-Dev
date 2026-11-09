@@ -335,7 +335,7 @@ static int try_move(Game *g, Room *r, Obj *o, int dx, int dy, int depth) {
 /* Static scenery (boulders, pillars, walls, blocks: type bit 6, not pushable, no verb of its own): no action menu and no contact sound. */
 static int has_contact_uo(const Game *g, const Obj *q) { for (int i = 0; i < g->nuo; i++) if (g->uo_pid[i] == q->pid && (g->uo_item[i] & 0x8000)) return 1; return 0; }   /* reacts only to a specific other object touching it (room 12 wall stack and the pickaxe) */
 static int has_use_on(const Game *g, const Obj *q) { for (int i = 0; i < g->nuo; i++) if (g->uo_pid[i] == q->pid) return 1; return 0; }
-static int scenery(const Game *g, const Obj *q) { const Sprite *s = &g->spr[q->slot]; if (has_contact_uo(g, q) && !s->b17 && !(s->c & 2) && !(s->c & 0x40 && s->push)) return 1; return ((s->c & 0x40) && !(s->c & 2) && !s->push && !s->b17 && s->b1d != 8) || (s->c == 0 && s->b1d == 3 && !s->push && !s->b17 && !has_use_on(g, q)); }
+static int scenery(const Game *g, const Obj *q) { const Sprite *s = &g->spr[q->slot]; if (has_contact_uo(g, q) && !s->b17 && !(s->c & 2)) return 1; return ((s->c & 0x40) && !(s->c & 2) && !s->push && !s->b17 && s->b1d != 8) || (s->c == 0 && s->b1d == 3 && !s->push && !s->b17 && !has_use_on(g, q)); }
 static int facing_target(const Game *g) {
     const Room *r = &g->rooms[g->cur];
     int dx = ((g->facing & JOY_RIGHT) ? 1 : 0) - ((g->facing & JOY_LEFT) ? 1 : 0);
