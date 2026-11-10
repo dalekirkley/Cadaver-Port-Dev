@@ -1196,6 +1196,16 @@ void game_tick(Game *g, int joy) {
                 if (!(c[1] & 0x80)) { if (g->rs_done[room][b]) continue; g->rs_done[room][b] = 1; }
                 Vm m = { g, &g->hero, c, c[0], 3, 0, 0 }; vm_block(&m); if (g->cur != room) break; }
             if (g->cur != room) break; } } }
+    /* Event 0x11 over room zones: a pushable object (not the hero) whose box overlaps zone n runs the room's event-0x11 block for n (the block's ops test the object's type, e.g. room 27). */
+    if (g->zn_n[g->cur]) { int haspit = 0; for (int i = 0; i < r->nobj; i++) if ((g->spr[r->objs[i].slot].c & 0x48) == 0x48) haspit = 1;
+      if (!haspit) { int room = g->cur;
+        for (int i = 0; i < r->nobj && g->cur == room; i++) { Obj *q = &r->objs[i]; if (q->dying > 0 || !pushable(g, q)) continue;
+            Box qb = box_of(g, q);
+            for (int zi = g->zn_n[room]; zi >= 1; zi--) { const uint8_t *z = g->zn_b[room][zi - 1];
+                if (qb.x1 < z[0] || qb.x0 > z[2] || qb.y1 < z[1] || qb.y0 > z[3] || qb.z1 < z[4] || qb.z0 > z[5]) continue;
+                for (int b = 0; b < g->rs_nb[room]; b++) { const uint8_t *c = g->rs_blk[room][b]; if ((c[1] & 0x7f) != 0x11 || c[0] < 4 || c[2] != zi) continue;
+                    Vm m = { g, q, c, c[0], 3, 0, 0 }; vm_block(&m); if (g->cur != room) break; }
+                if (g->cur != room) break; } } } }
     /* Pits and pressure plates (floor objects with type bits 0x48). A plate is named by a room event-0x0f block that starts with op 0x03 on it (`03 id`): the block runs once when
        the hero steps onto that plate (the original's trap number is the plate's zone; the block names it). Over any other such object (a pit) the trap-1 block runs every tick
        and teleports him down (op 0x25). */
