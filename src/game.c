@@ -646,6 +646,14 @@ static void cast_spell(Game *g, int target) {
         if (target < 0) { say(g, 41); return; }                                         /* "you must cast this spell on a specific object" */
         const Sprite *ts = &g->spr[r->objs[target].slot]; int done = 0;
         if (no == 15 && ts->b16 == 8) { for (int i = 0; i < g->nch; i++) if (g->ch_pid[i] == r->objs[target].pid && g->ch_trap[i]) { g->ch_trap[i] = 0; say(g, 52); done = 1; } }
+        Obj *to = &r->objs[target]; int tp = to->pid;
+        if (no == 0 && ts->b16 == 3 && tp >= 0 && tp < 1024 && g->cre_ok[tp]) {         /* spell 0 ($96898): damage the creature in front by the power unless it is invulnerable (part +6 bit 0); the flash plays either way */
+            done = 1; start_flash(g);
+            if (!(g->cre_fl6[tp] & 1) && to->dying <= 0) { if (to->hp <= 0) to->hp = g->cre_hp[tp]; to->hp -= pw; if (to->hp <= 0) start_dying(g, to); }
+        }
+        if (no == 10 && ts->b16 == 4 && tp >= 0 && tp < 1024 && g->hit_ok[tp]) {        /* spell 10 ($96a1c): bless weapon, the weapon's damage grows by the power (text 32) */
+            int nd = g->hit_dmg[tp] + pw; g->hit_dmg[tp] = (uint8_t)(nd > 255 ? 255 : nd); say(g, 32); done = 1;
+        }
         play_sound(g, 6); room_event(g, 0x18, no);                                      /* every cast posts room event 0x18 with the spell number ($ed66) */
         if (!done) { say(g, 47); return; }                                              /* "you wasted that spell" */
     } else {
@@ -656,6 +664,7 @@ static void cast_spell(Game *g, int target) {
                 if (q->hp <= 0) q->hp = g->cre_hp[cp]; q->hp -= pw; if (q->hp <= 0) start_dying(g, q); }
         } else if (no == 2) { g->tmr[0x22] = (uint8_t)pw; start_flash(g); }                    /* services $30 (start timer) and $1c (flash) */
         else if (no == 22) { g->tmr[0x26] = (uint8_t)pw; start_flash(g); }
+        else if (no == 3 || no == 17 || no == 23 || no == 24) start_flash(g);               /* service $28: grey flash only ($96948) */
     }
     for (int i = 0; i < g->ninv; i++) if (g->inv[i] == pid) { inv_remove(g, i); break; }   /* the scroll or stone is used up and no longer held */
     g->inv_hold = -1;
