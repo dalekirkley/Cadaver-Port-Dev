@@ -52,7 +52,7 @@ struct Game {
     int scroll_t; char scroll_str[256]; long score; int map_open, map_px, map_py, status_open; long gold, xp, level; uint8_t visited[100];
     int has_icons; uint8_t icons[20 * 112]; uint16_t slotpos[8][4]; uint8_t verbtab[16];
     int target, nverbs, verbs[8], menu, sel, prev_joy, msg, msg_t, ninv, inv[64], inv_slot[64], inv_mode, inv_sel, inv_hold;     /* verb menu state */
-    uint16_t wallflag[MAX_WALLIDX]; uint8_t walldoor[MAX_WALLIDX]; int bump_timer;    /* wall-record flags, shared by the two rooms a wall joins */
+    uint16_t wallflag[MAX_WALLIDX]; uint8_t walldoor[MAX_WALLIDX]; int bump_timer, bumped_now;    /* wall-record flags, shared by the two rooms a wall joins */
     unsigned tickno; int walk_ticks, walk_step, start_room; Obj start_hero;
     Sfx sfx[65]; Voice voice[4]; SeqVoice sq[8];
     uint8_t *hud;                      /* 320*200*4 bottom panel frame, or NULL */
@@ -600,7 +600,7 @@ static int try_exit(Game *g, int dx, int dy) {
             }
             if (key) return 0;                                    /* a key door without its key stays shut and silent (checked in the emulator: no sound call while pushing against room 0's key door) */
         } else if (wall_closed(g, w)) {                           /* shut door: bump, with a sound at most every 32 ticks ($9be counter) */
-            if (g->bump_timer <= 0) { play_sound(g, 60); g->bump_timer = 32; }
+            g->bumped_now = 1; if (g->bump_timer <= 0) { play_sound(g, 60); g->bump_timer = 32; }
             return 0;
         }
         Room *nr = &g->rooms[n]; int x, y;
@@ -721,12 +721,12 @@ static void exec_verb(Game *g, int verb) {
         Obj *ch = &r->objs[g->target];
         int ci = -1; for (int i = 0; i < g->nch; i++) if (g->ch_pid[i] == ch->pid) ci = i;
         if (ci >= 0 && (ch->flags & 1)) { if (g->ch_flags[ci] & 0x20) { ch->flags &= ~1; play_sound(g, 0x38); } else say(g, 3); return; }          /* open: only some chests close again */
-        if (ci >= 0 && g->ch_trap[ci]) { change_energy(g, -g->ch_trap[ci]); g->ch_trap[ci] = 0; say(g, 50); play_sound(g, 0x24); return; }   /* a trap goes off first (once) */
+        if (ci >= 0 && g->ch_trap[ci]) { change_energy(g, -g->ch_trap[ci]); say(g, 50); return; }   /* a trap goes off first, every time until it is disarmed (spell 15): $9e60..$9e76 subtract the byte through the energy service and never clear it; the pain sound is the energy service's $1b */
         if (ci >= 0 && g->ch_key[ci]) {                                                /* locked: the key must be in the rucksack */
             int ki = -1; for (int i = 0; i < g->ninv; i++) if (g->inv[i] == g->ch_key[ci]) ki = i;
-            if (ki < 0) { play_sound(g, 0x3b); say(g, 48); return; }
+            if (ki < 0) { play_sound(g, 0x3b); return; }                 /* $9e86 -> $9f68: only sound $3b (text 48 belongs to doors) */
             if (g->ch_flags[ci] & 2) inv_remove(g, ki);                                /* the key is used up */
-            g->ch_key[ci] = 0; play_sound(g, 0x12);
+            g->ch_key[ci] = 0;                                            /* the key check ($10dce) is silent */
         }
         int opened_contents = 0;
         if (ci >= 0 && g->ch_cont[ci]) {                                               /* contents appear where the chest stands */
@@ -956,7 +956,8 @@ static void update_thrown(Game *g) {
             for (int k = 0; k < r->nobj; k++) { const Obj *q = &r->objs[k]; if (k == i || flat(g, q) || q->life != 0 || q->fly > 0) continue;
                 Box qb = box_of(g, q); if (qb.x1 < ob.x0 || ob.x1 < qb.x0 || qb.y1 < ob.y0 || ob.y1 < qb.y0) continue;
                 if (qb.z1 + 1 <= o->z - dz && qb.z1 + 1 > rest) rest = qb.z1 + 1; }
-            if (dz < 0 && o->z <= rest) { o->z = rest; done = 1; } }
+            if (dz < 0 && o->z <= rest) { o->z = rest; done = 1;
+                if (rest == 0) { static const uint8_t lsnd[19] = { 9, 9, 9, 13, 13, 9, 19, 9, 9, 9, 19, 9, 13, 9, 9, 13, 13, 19, 9 }; int ty = g->spr[o->slot].b1d; play_sound(g, ty >= 0 && ty < 19 ? lsnd[ty] : 9); } } }   /* reaching the floor ends the program and plays the type's hit sound, table $5bf8 by type byte +$1d ($f330..$f396) */
         if (done) { if (o->stone) o->life = -1; else { o->fly = 0; o->vx = o->vy = o->vz = 0; } }
     }
     int w = 0; for (int i = 0; i < r->nobj; i++) if (!(r->objs[i].stone && r->objs[i].life < 0)) r->objs[w++] = r->objs[i];       /* spent stones vanish */
@@ -1389,7 +1390,8 @@ void game_tick(Game *g, int joy) {
         g->walk_step = step & 3; g->walk_ticks++;
     } else g->walk_ticks = 0;
     g->anim_t++;
-    if (g->bump_timer > 0) g->bump_timer--;
+    if (!g->bumped_now) g->bump_timer = 0; else if (g->bump_timer > 0) g->bump_timer--;      /* $9be is reloaded ($f8) on every tick that does not bump ($70c4) */
+    g->bumped_now = 0;
     { int old = g->target; r = &g->rooms[g->cur]; g->target = facing_target(g); if (g->target != old) { g->menu = 0; g->msg_t = 0; } build_verbs(g); }
 }
 
