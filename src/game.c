@@ -1,8 +1,5 @@
 #include "game.h"
-#include "sound_table.h"
-#include "sound_seq.h"
-#define SND_TICK_SEC 0.02       /* seconds per script tick = one 50 Hz frame; measured on the locked-door sound $3c in the emulator (Paula log): two 2-tick notes last 2 video frames each, then the 3rd sample plays to its end */
-#define SND_MAX_SEC 4.0         /* a script never runs longer than this */
+#include "sound_stream.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -19,8 +16,8 @@
 #define WALK_TICKS_PER_FRAME 3   /* measured in the original: 6 video frames per walk frame */
 
 typedef struct { int len; int8_t *data; } Sfx;
-typedef struct { int sfx; double pos, step; double vol; int snd; double left, total; } Voice;
-typedef struct { const SndEv *ev; int n, i, mv, snd; double t, el; } SeqVoice;   /* left = seconds before the voice is cut (0 = play to the end) */
+typedef struct { int lc, len, per, dma, pend, cb, cpos, crem, snd; double vol, frac; } Chan;   /* one Paula channel */
+typedef struct { int on, snd, i, end, loop_i, off, lastf; uint8_t own; double t, vmul; } SndState;   /* a sound's register stream: own = channels it still drives */
 typedef struct { int state, w, h; int16_t f[5]; int push; int16_t fx, fy, fz, name; uint8_t c, b16, b17, b1d; uint8_t *px; int aw, ah, ax, ay, f0x, f0y, creature; uint8_t *apx; int nfr; struct { int w, h, dx, dy; uint8_t *px; } fr[16]; } Sprite;
 typedef struct { int16_t hx, hy; int w, h; uint8_t *px; } Frame;
 typedef struct { int x, y, z, slot, flags, pid, xflags, anim, atick, home, stage, vx, vy, life, hp, lift, mpc, mwait, mstop, mc[3], mdir, skey, macc, aon, amode, aframe, arev, apc, acnt, arel, adir, dying, fly, vz, stone; } Obj;   /* life > 0: a missile in flight; hp: remaining health of a creature (0 = not set yet) */
@@ -54,7 +51,7 @@ struct Game {
     int target, nverbs, verbs[8], menu, sel, prev_joy, msg, msg_t, ninv, inv[64], inv_slot[64], inv_mode, inv_sel, inv_hold;     /* verb menu state */
     uint16_t wallflag[MAX_WALLIDX]; uint8_t walldoor[MAX_WALLIDX]; int bump_timer, bumped_now;    /* wall-record flags, shared by the two rooms a wall joins */
     unsigned tickno; int walk_ticks, walk_step, start_room; Obj start_hero;
-    Sfx sfx[65]; Voice voice[4]; SeqVoice sq[8];
+    Sfx sfx[65]; Chan ch[4]; SndState st[8]; uint8_t chpri[4], snd_lock, sndq[20][2];
     uint8_t *hud;                      /* 320*200*4 bottom panel frame, or NULL */
     uint8_t *held_ov; int held_x, held_y, held_w, held_h;   /* optional left-panel variant shown while an item is held (RGBA) */
 };
@@ -222,59 +219,121 @@ int game_room(const Game *g) { return g->cur; }
 void game_hero(const Game *g, int *x, int *y, int *z) { *x = g->hero.x; *y = g->hero.y; *z = g->hero.z; }
 
 /* ---------------------------------------------------------------- sound */
-/* Original Paula clock: 3546895 / period = sample rate; volume is Paula's 0..64. */
-static int play_voice(Game *g, int id, int period, double vol, double seconds, int chan) {
-    if (id < 0 || id >= 74 || (id < 65 && !g->sfx[id].len)) return -1;
-    int v = chan & 3;                                                    /* a sound's script i always drives Paula channel i; a newer sound takes the channel over */
-    g->voice[v].sfx = id; g->voice[v].pos = 0; g->voice[v].step = 3546895.0 / period; g->voice[v].vol = vol; g->voice[v].left = seconds; g->voice[v].total = seconds; return v;
-}
-
-/* Cut a sound that is still playing (original $153fa: the contact sound stops when the contact ends). */
-static void stop_sound(Game *g, int snd) {
-    for (int q = 0; q < 8; q++) if (g->sq[q].ev && g->sq[q].snd == snd) g->sq[q].ev = NULL;
-    for (int v = 0; v < 4; v++) if (g->voice[v].step && g->voice[v].snd == snd + 1) g->voice[v].step = 0;
-}
-
-/* Play a game sound id with its real per-voice samples, periods and volumes. */
-static void play_sound(Game *g, int snd) {
-    if (snd < 0 || snd >= 69) return;
-    for (int i = 0; i < 4; i++) {
-        int n = SND_IDX[snd][i][1]; if (!n) continue;
-        int k = i;
-        if (snd == 0 && ((g->sq[k].ev && g->sq[k].snd != 0) || (g->voice[k].step && g->voice[k].snd != 1))) continue;   /* footsteps are lowest priority: they never cut another sound off its channel (the door sound on channel 0) */
-        g->sq[k].ev = &SND_EV[SND_IDX[snd][i][0]]; g->sq[k].n = n; g->sq[k].i = 0; g->sq[k].t = 0; g->sq[k].mv = -1; g->sq[k].snd = snd; g->sq[k].el = 0;
-    }
-}
+/* ---------------------------------------------------------------- sound
+ * The original sound dispatcher ($152c6 play, $153fa stop, $153c2 start scripts) is reproduced from its code, and the original
+ * sound engine's output is replayed exactly: sound_stream.h holds, per sound id, the Paula register writes the original engine
+ * made (50 Hz frames: buffer, length, period, volume, DMA on/off), captured from the original running in the emulator
+ * (tools/sound_stream.py).  The mixer below only plays those registers like Paula does. */
+#define SND_LOOP_MAX_SEC 12.0    /* looping sounds (contact sounds) run until stopped; a missed stop call must not drone on forever */
+#define PAULA_CLOCK 3546895.0
+#define IDLE_BUF 0xffff
 
 #define FOOTSTEP_VARIANCE 0.15   /* +-15% of the original volume per step; +-5% (0.4 dB) was too small to hear */
-/* Audio-only random in -1..1 (kept apart from the simulation's generator): footsteps vary +-5% in volume. */
+/* Audio-only random in -1..1 (kept apart from the simulation's generator). */
 static double audio_rand(Game *g) { g->aud_seed = g->aud_seed * 1664525u + 1013904223u; return ((g->aud_seed >> 8) & 0xffff) / 32767.5 - 1.0; }
+
+static int snd_queue_has(const Game *g, int snd) { for (int i = 0; i < 20; i++) if (g->sndq[i][1] && g->sndq[i][0] == snd) return 1; return 0; }
+static void snd_enqueue(Game *g, int snd, int pri) {                     /* $15338.. : remember a queued (looping) sound; a duplicate is not added */
+    if (snd_queue_has(g, snd)) return;
+    for (int i = 0; i < 20; i++) if (!g->sndq[i][1]) { g->sndq[i][0] = (uint8_t)snd; g->sndq[i][1] = (uint8_t)pri; return; }
+}
+
+/* $37df4 for each script byte of the sound: start the sound's scripts on its channels, taking the channels over from older sounds. */
+static void snd_start_scripts(Game *g, int snd, int mask) {
+    if (!mask) return;
+    int slot = -1;
+    for (int q = 0; q < 8; q++) if (g->st[q].on) { g->st[q].own &= ~mask; if (!g->st[q].own) g->st[q].on = 0; }
+    for (int q = 0; q < 8; q++) if (!g->st[q].on) { slot = q; break; }
+    if (slot < 0) slot = 0;
+    SndState *s = &g->st[slot];
+    s->on = 1; s->snd = snd; s->own = (uint8_t)mask; s->i = SSIDX[snd][0]; s->end = SSIDX[snd][0] + SSIDX[snd][1]; s->t = 0; s->off = 0; s->lastf = -1;
+    s->loop_i = s->end; s->vmul = 1.0;
+    if (SSLOOP[snd][1]) { s->loop_i = s->i; while (s->loop_i < s->end && SSEV[s->loop_i].frame < SSLOOP[snd][0]) s->loop_i++; }
+}
+
+/* $152c6: play a sound.  Bit 7 of the priority byte marks a queued (looping) sound, which must beat the priority of every channel it uses. */
+static void play_sound(Game *g, int snd) {
+    if (snd < 0 || snd >= 69) return;
+    const uint8_t *t = SNDTAB[snd];
+    if (t[1] & 0x80) return;
+    int pri = t[0] & 0x7f, queued = t[0] & 0x80, mask = 0;
+    for (int c = 0; c < 4; c++) if (t[2 + c]) mask |= 1 << c;
+    if (queued) {
+        for (int c = 0; c < 4; c++) if ((mask >> c & 1) && pri <= g->chpri[c]) { snd_enqueue(g, snd, pri); return; }   /* a sound on one of its channels is at least as important */
+        if (snd_queue_has(g, snd)) return;
+        snd_enqueue(g, snd, pri);
+        if (t[1]) g->snd_lock = 0;
+    } else if (t[1]) g->snd_lock = 1;
+    if (snd == 0) {                                                       /* footsteps never cut another sound off its channel (they would silence the door sound on channel 0) */
+        for (int q = 0; q < 8; q++) if (g->st[q].on && g->st[q].snd != 0) mask &= ~g->st[q].own;
+        if (!mask) return;
+    }
+    for (int c = 0; c < 4; c++) if (mask >> c & 1) g->chpri[c] = (uint8_t)pri;
+    snd_start_scripts(g, snd, mask);
+    if (snd == 0) for (int q = 0; q < 8; q++) if (g->st[q].on && g->st[q].snd == 0) g->st[q].vmul = 1.0 + FOOTSTEP_VARIANCE * audio_rand(g);
+}
+
+/* $153fa: stop a sound: drop it from the queue; unless a plain sound holds the lock, restart the most important queued sound, or when none is left
+ * play sound $15, whose scripts reset all four channels. */
+static void stop_sound(Game *g, int snd) {
+    for (int i = 0; i < 20; i++) if (g->sndq[i][1] && g->sndq[i][0] == snd) { g->sndq[i][0] = g->sndq[i][1] = 0; break; }
+    if (g->snd_lock) return;
+    int best = -1, bp = 0;
+    for (int i = 0; i < 20; i++) if (g->sndq[i][1] && g->sndq[i][1] > bp) { bp = g->sndq[i][1]; best = g->sndq[i][0]; }
+    { int sn = best >= 0 ? best : 0x15, m = 0; for (int c = 0; c < 4; c++) if (SNDTAB[sn][2 + c]) m |= 1 << c; snd_start_scripts(g, sn, m); }
+}
+
+/* One register write of the stream's script onto a Paula channel. */
+static void paula_apply(Game *g, SndState *s, const SndStreamEv *e) {
+    Chan *c = &g->ch[e->ch & 3];
+    switch (e->kind) {
+    case 0: c->lc = e->a; break;
+    case 1: c->len = e->a; break;
+    case 2: c->per = e->a; break;
+    case 3: { int v = e->a > 64 ? 64 : e->a; c->vol = s->snd == 0 ? v * s->vmul : (double)v; break; }
+    case 4: c->dma = 1; c->pend = 1; c->snd = s->snd; break;
+    case 5: c->dma = 0; c->pend = 0; break;
+    }
+}
+static void paula_latch(Chan *c) {                                          /* DMA start / buffer wrap: load the pointer and length registers */
+    c->cb = c->lc; c->cpos = 0; c->crem = (c->len ? c->len : 65536) * 2;
+}
+
 
 void game_audio_mix(Game *g, int16_t *out, int n, int rate) {
     for (int i = 0; i < n; i++) {
-        double accl = 0, accr = 0, accp = 0;
-        for (int q = 0; q < 8; q++) {                                           /* note sequencers */
-            SeqVoice *sq = &g->sq[q]; if (!sq->ev) continue;
-            if ((sq->t -= 1.0 / rate) > 0) continue;
-            if (sq->i >= sq->n) { sq->ev = NULL; continue; }
-            const SndEv *e = &sq->ev[sq->i]; int last = sq->i == sq->n - 1;
-            if (sq->mv >= 0) g->voice[sq->mv].step = 0;
-            if (e->sample >= 0) sq->mv = play_voice(g, e->sample, e->period, sq->snd == 0 ? e->vol * (1.0 + FOOTSTEP_VARIANCE * audio_rand(g)) : (double)e->vol, (last && e->sample < 65 && sq->snd != 0x3c) ? (sq->snd == 0 ? 0.1 : 0.6) : e->ticks * SND_TICK_SEC, q); else sq->mv = -1;
-            if (sq->mv >= 0) g->voice[sq->mv].snd = sq->snd + 1;
-            sq->t += e->ticks * SND_TICK_SEC; sq->i++; sq->el += e->ticks * SND_TICK_SEC; if (sq->el > SND_MAX_SEC) sq->i = sq->n;
+        for (int q = 0; q < 8; q++) {                                           /* the original engine's register streams, 50 Hz */
+            SndState *s = &g->st[q]; if (!s->on) continue;
+            s->t += 50.0 / rate;
+            if (SSLOOP[s->snd][1] && s->t > SND_LOOP_MAX_SEC * 50.0) { for (int c = 0; c < 4; c++) if (s->own >> c & 1) g->chpri[c] = 0; s->on = 0; continue; }
+            for (;;) {
+                if (s->i >= s->end) {
+                    if (!SSLOOP[s->snd][1]) { for (int c = 0; c < 4; c++) if (s->own >> c & 1) g->chpri[c] = 0; s->on = 0; break; }   /* script finished: the channel's priority is free again */
+                    s->i = s->loop_i; s->off += SSLOOP[s->snd][1]; if (s->i >= s->end) { s->on = 0; break; }
+                }
+                const SndStreamEv *e = &SSEV[s->i]; int f = e->frame + s->off;
+                if (f > s->t) break;
+                if (f != s->lastf) { for (int c = 0; c < 4; c++) if (g->ch[c].pend) { paula_latch(&g->ch[c]); g->ch[c].pend = 0; } s->lastf = f; }
+                if (s->own >> (e->ch & 3) & 1) paula_apply(g, s, e);
+                s->i++;
+            }
         }
-        for (int v = 0; v < 4; v++) {
-            Voice *vo = &g->voice[v]; if (!vo->step) continue;
-            int syn = vo->sfx >= 65, p = (int)vo->pos, len, sv;
-            if (syn) { len = SYN_LEN[vo->sfx - 65]; if (!len) { vo->step = 0; continue; } p %= len; sv = SYN_DATA[vo->sfx - 65][p]; if (vo->left > 0 && vo->total > 0) sv = (int)(sv * (vo->left / vo->total)); }   /* synth note: looped cycle with a linear fade */
-            else { const Sfx *s = &g->sfx[vo->sfx]; if (p >= s->len) { vo->step = 0; continue; } sv = s->data[p]; }
-            if (vo->snd == 4 || vo->snd == 0x1b) accp += sv * vo->vol; else if (v == 0 || v == 3) accl += sv * vo->vol; else accr += sv * vo->vol;   /* Paula: voices 0 and 3 left, 1 and 2 right */
-             vo->pos += vo->step / rate;
-            if (syn && vo->pos >= 1e9) vo->pos = 0;
-            if (vo->left > 0 && (vo->left -= 1.0 / rate) <= 0) vo->step = 0;
+        for (int c = 0; c < 4; c++) if (g->ch[c].pend) { paula_latch(&g->ch[c]); g->ch[c].pend = 0; }
+        double accl = 0, accr = 0, accp = 0;
+        for (int c = 0; c < 4; c++) {
+            Chan *ch = &g->ch[c]; if (!ch->dma || ch->cb == IDLE_BUF || ch->cb >= (int)(sizeof SSB_LEN / sizeof SSB_LEN[0])) continue;
+            int sv = ch->cpos < SSB_LEN[ch->cb] ? SSB_DATA[SSB_OFF[ch->cb] + ch->cpos] : 0;
+            double a = sv * ch->vol;
+            if (ch->snd == 3 || ch->snd == 0x1a) accp += a; else if (c == 0 || c == 3) accl += a; else accr += a;   /* Paula: channels 0 and 3 left, 1 and 2 right */
+            int per = ch->per < 113 ? 113 : ch->per;
+            ch->frac += PAULA_CLOCK / per / rate;
+            while (ch->frac >= 1.0) {
+                ch->frac -= 1.0; ch->cpos++;
+                if (--ch->crem <= 0) { paula_latch(ch); if (ch->cb == IDLE_BUF || ch->cb >= (int)(sizeof SSB_LEN / sizeof SSB_LEN[0])) break; }
+            }
         }
         double x = (accl + accr) * 4.0, ax = fabs(x); if (ax > 6000.0) { ax = 6000.0 + 6000.0 * tanh((ax - 6000.0) / 6000.0); x = x < 0 ? -ax : ax; }
-        { double y = accp * 4.0, ay = fabs(y); if (ay > 6000.0) { ay = 6000.0 + 6000.0 * tanh((ay - 6000.0) / 6000.0); y = y < 0 ? -ay : ay; } x += y * 0.8; }   /* pickup sounds (3 and $1a) are mixed apart and 20% quieter */   /* mono downmix of Paula's two sides; quiet sounds stay as they were, loud stacked voices (menu confirm, pickups) are compressed towards 12000 */
+        { double y = accp * 4.0, ay = fabs(y); if (ay > 6000.0) { ay = 6000.0 + 6000.0 * tanh((ay - 6000.0) / 6000.0); y = y < 0 ? -ay : ay; } x += y * 0.8; }   /* pickup sounds (3 and $1a) are mixed apart and 20% quieter */
         out[i] = (int16_t)x;
     }
 }
@@ -1775,3 +1834,5 @@ void game_cycle_room(Game *g, int dir) {
 }
 
 void game_play_sound(Game *g, int snd) { play_sound(g, snd); }   /* debug/test: trigger a sound id */
+
+void game_play_sound_test(Game *g, int id) { play_sound(g, id); }   /* test hook (tests/sound.c) */
