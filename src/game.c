@@ -654,6 +654,11 @@ static void cast_spell(Game *g, int target) {
         if (no == 10 && ts->b16 == 4 && tp >= 0 && tp < 1024 && g->hit_ok[tp]) {        /* spell 10 ($96a1c): bless weapon, the weapon's damage grows by the power (text 32) */
             int nd = g->hit_dmg[tp] + pw; g->hit_dmg[tp] = (uint8_t)(nd > 255 ? 255 : nd); say(g, 32); done = 1;
         }
+        if ((no == 20 && ts->b16 == 1 && tp >= 0 && tp < 1024 && g->spl_ok[tp] && (g->spl_fl[tp] & 1)) ||       /* spells 20/21 ($96b1e/$96b42): the target (scroll / potion) needs flag bit 0 (unknown); it is cleared with bits 1 and 7, so a scroll becomes readable */
+            (no == 21 && ts->b16 == 2 && tp >= 0 && tp < 1024 && g->cons_ok[tp] && (g->cons_fl[tp] & 1))) {
+            if (no == 20) g->spl_fl[tp] &= (uint8_t)~0x83; else g->cons_fl[tp] &= (uint8_t)~0x83;
+            start_flash(g); done = 1;
+        }
         play_sound(g, 6); room_event(g, 0x18, no);                                      /* every cast posts room event 0x18 with the spell number ($ed66) */
         if (!done) { say(g, 47); return; }                                              /* "you wasted that spell" */
     } else {
@@ -763,6 +768,7 @@ static void exec_verb(Game *g, int verb) {
         if (pid >= 0 && pid < 1024 && g->cons_ok[pid]) {
             play_sound(g, 0x0a);
             int ef = g->cons_eff[pid], am = g->cons_amt[pid];
+            if (!(g->cons_fl[pid] & 2)) g->cons_fl[pid] &= (uint8_t)~1;                 /* drinking uses up the unknown flag unless bit 1 holds it ($9fac) */
             if (g->cons_left[pid] > 0) g->cons_left[pid]--;
             if (g->cons_left[pid] == 0) { memmove(ob, ob + 1, (size_t)(r->nobj - g->target - 1) * sizeof(Obj)); r->nobj--; g->target = -1; g->nverbs = 0; g->menu = 0; }
             if (g->cons_fl[pid] & 4) { change_energy(g, -am); say(g, 34); return; }       /* a bad potion hurts */
