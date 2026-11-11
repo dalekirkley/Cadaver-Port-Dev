@@ -625,7 +625,13 @@ static void build_verbs(Game *g) {
     Room *r = &g->rooms[g->cur]; g->nverbs = 0;
     if (g->target < 0 || !g->has_icons) return;
     const Obj *o = &r->objs[g->target]; const Sprite *s = &g->spr[o->slot]; int *v = g->verbs, n = 0;
+    if (g->inv_hold >= 0) {                             /* the held item's verbs for the touched object ($9926..$99ae): containers whose state has bits 4 and 0 (open) take verb 12, class 11 objects verb 12, class 12 verb 15 */
+        int cl = s->b16, ci = -1; for (int i = 0; i < g->nch; i++) if (g->ch_pid[i] == o->pid) ci = i;
+        if (cl == 8 && ci >= 0 && (g->ch_flags[ci] & 0x10) && (o->flags & 1)) v[n++] = 12; else if (cl == 11) v[n++] = 12; else if (cl == 12) v[n++] = 15;
+        if (n) goto have_use;
+    }
     if (g->inv_hold >= 0) for (int i = 0; i < g->nuo; i++) if (g->uo_pid[i] == o->pid && (g->uo_item[i] == g->inv_hold || g->uo_item[i] == (0x4000 | g->inv_hold))) { v[n++] = g->uo_item[i] & 0x4000 ? 15 : 12; break; }   /* use the held item on this object ($a036): only when it has a block for it */
+    have_use:;
     if ((s->c & 2) && !(o->xflags & 4)) v[n++] = 2;                                   /* take */
     if (s->b17 && !(o->xflags & 0x40) && g->verbtab[s->b17 & 15] < 20) v[n++] = g->verbtab[s->b17 & 15];
     if (s->b1d == 0x12) v[n++] = 0xe;
@@ -755,6 +761,14 @@ static void exec_verb(Game *g, int verb) {
     }
     if (verb == 12 || verb == 15) {                                                                 /* use the held item on the target: sound $1e, then the target's event-0x12 block for that item */
         Obj *ob = &r->objs[g->target]; int pid = ob->pid, it = g->inv_hold;
+        if (verb == 12 && g->spr[ob->slot].b16 == 8) {                                       /* a container ($a044): its content word must be empty (else text $1b); the held item is stored in it and leaves the rucksack ($a05a, $a1b2) */
+            int ci = -1; for (int i = 0; i < g->nch; i++) if (g->ch_pid[i] == pid) ci = i;
+            if (ci >= 0 && g->ch_cont[ci]) { say(g, 27); g->menu = 0; g->nverbs = 0; return; }
+            if (ci >= 0 && it >= 0 && g->nhid < 1024) {
+                int hs = -1; for (int i = 0; i < g->ninv; i++) if (g->inv[i] == it) hs = i;
+                if (hs >= 0) { Obj st; memset(&st, 0, sizeof st); st.pid = it; st.slot = g->inv_slot[hs]; st.x = ob->x; st.y = ob->y; st.z = ob->z; g->hid[g->nhid].room = g->cur; g->hid[g->nhid++].o = st;
+                    g->ch_cont[ci] = (uint16_t)it; inv_remove(g, hs); g->inv_hold = -1; } }
+        }
         if (verb == 12) play_sound(g, 0x1e); g->menu = 0; g->nverbs = 0;
         for (int i = 0; i < g->nuo; i++) if (g->uo_pid[i] == pid && g->uo_item[i] == (verb == 15 ? (0x4000 | it) : it)) { run_script(g, &g->rooms[g->cur].objs[g->target], g->uo_code[i], g->uo_len[i]); break; }
         g->target = -1;
