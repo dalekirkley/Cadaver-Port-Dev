@@ -411,7 +411,7 @@ for n in range(100):
     if nz:zs.append((n,nz,rm[0x17],bytes(rm[q+2:q+2+6*nz])))
 P('B',1);P('H',len(zs))
 for n,nz,f,b in zs:P('BBB',n,nz,f);o+=b
-# ranged weapons (optional, after the zones): class byte +0x16 == 4 (stone bag); part byte +3 = number of shots ($ee28/$ef58; texts 14/15/17: "no ammo", "last shot", "n shots left")
+# ranged weapons (optional, after the zones): class byte +0x16 == 4 (stone bag); part byte +3 = number of shots, part bytes +0/+1 = the ammo placement id ($ee28/$eeb6/$ef58; texts 14/15/17)
 rg=[]
 for pid in range(1024):
     pr=L.g6.rec(pid)
@@ -420,7 +420,21 @@ for pid in range(1024):
     if not e or len(e)<0x30 or e[0x16]!=4:continue
     q=pr[0xc]
     if q==0 or q+4>len(pr):continue
-    rg.append((pid,pr[q+3]))
+    rg.append((pid,pr[q+3],u16(pr,q)))
 P('B',1);P('H',len(rg))
-for pid,sh in rg:P('HB',pid,sh)
+for pid,sh,am in rg:P('HBH',pid,sh,am)
+# hit damage (optional, after the ranged weapons): the damage routine $f7b2 reads the attacker's placement memory at [record + part offset (+0xc)]: +1 = damage, +5 = damage-type bit (tested against the victim's part byte +5).
+# Placements without a part have the offset pointing at the end of their own record, so the bytes come from the NEXT placement record in memory (verified in RAM: pickaxe pid 168 -> 17 and bit 169&7).
+hd=[]
+for pid in range(1024):
+    pr=L.g6.rec(pid)
+    if len(pr)<16:continue
+    buf=bytes(pr)
+    for k in range(1,6):
+        nx=L.g6.rec(pid+k) if pid+k<L.g6.n else b''
+        buf+=bytes(nx)
+    q=pr[0xc]
+    if q+5<len(buf):hd.append((pid,buf[q+1],buf[q+5]))
+P('B',1);P('H',len(hd))
+for pid,dm,bt in hd:P('HBB',pid,dm,bt)
 open(out,'wb').write(o);print(len(o),'bytes,',len(exam),'examine texts')
