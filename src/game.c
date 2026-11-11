@@ -1070,9 +1070,17 @@ static int creature_free(Game *g, Room *r, Obj *o, int nx, int ny) {
 /* Chase routine of movement state 3 (level code $964a0 + classifier $965b8, decoded 2026-11-07, see claude/creature-ai.md): every move tick the creature takes one step toward the hero
    in one of eight directions. e = creature - hero per axis; if both |e| <= 2 it stands still; otherwise the axis difference |ey|-|ex| picks pure x, pure y or a diagonal (tolerance 2).
    Original quirk kept: with the hero up and to the left, an x-dominant offset gives the diagonal, never pure left. One step every (pattern low nibble + 1) ticks, size = step bytes. */
+/* Movement pattern byte ($f48e / $f4d8, part byte +9): 0 = move every tick; otherwise the low nibble counts down one per tick, and when it is 0 the byte is reloaded
+   (low |= high) and the creature moves, so it moves once every (high nibble + 1) ticks. The live byte is kept in macc (bit 8 marks it initialised). */
+static int pat_tick(Game *g, Obj *c, int pid) {
+    if (!(c->macc & 0x100)) c->macc = 0x100 | g->mv_pat[pid];
+    int b = c->macc & 0xff; if (!b) return 1;
+    if ((b & 15) > 0) { c->macc = 0x100 | (b - 1); return 0; }
+    c->macc = 0x100 | (b | (b >> 4)); return 1;
+}
 static void chase_move(Game *g, Room *r, Obj *c) {
     int pid = c->pid; const Obj *h = &g->hero;
-    c->macc++; if (c->macc <= (g->mv_pat[pid] & 15)) return; c->macc = 0;
+    if (!pat_tick(g, c, pid)) return;
     int ex = c->x - h->x, ey = c->y - h->y, ax = ex < 0 ? -ex : ex, ay = ey < 0 ? -ey : ey;
     if (ax <= 2 && ay <= 2) return;
     int diff = ay - ax, d6;
@@ -1115,7 +1123,7 @@ static void creature_move(Game *g, Room *r, Obj *c) {
         else c->mstop = 1;
     }
     if (!(c->mc[0] | c->mc[1] | c->mc[2])) return;
-    c->macc += g->mv_pat[pid] ? 2 : 5; if (c->macc < 5) return; c->macc -= 5;   /* tick pattern byte: 0 = a step every tick (room 38 bats); 0x11 = about 2 steps in 5 ticks (room 52, measured). Other values unmeasured: treated like 0x11 */
+    if (!pat_tick(g, c, pid)) return;                                   /* pattern byte timing as in the original's executor */
     int d[3] = { c->mc[0] > 0 ? 1 : c->mc[0] < 0 ? -1 : 0, c->mc[1] > 0 ? 1 : c->mc[1] < 0 ? -1 : 0, c->mc[2] > 0 ? 1 : c->mc[2] < 0 ? -1 : 0 };
     int st0 = g->mv_step[pid][0] ? g->mv_step[pid][0] : 1, st1 = g->mv_step[pid][1] ? g->mv_step[pid][1] : 1, st2 = g->mv_step[pid][2] ? g->mv_step[pid][2] : 1;
     int nx = c->x + d[0] * st0, ny = c->y + d[1] * st1;
