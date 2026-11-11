@@ -23,7 +23,7 @@ typedef struct { int sfx; double pos, step; double vol; int snd; double left, to
 typedef struct { const SndEv *ev; int n, i, mv, snd; double t, el; } SeqVoice;   /* left = seconds before the voice is cut (0 = play to the end) */
 typedef struct { int state, w, h; int16_t f[5]; int push; int16_t fx, fy, fz, name; uint8_t c, b16, b17, b1d; uint8_t *px; int aw, ah, ax, ay, f0x, f0y, creature; uint8_t *apx; int nfr; struct { int w, h, dx, dy; uint8_t *px; } fr[16]; } Sprite;
 typedef struct { int16_t hx, hy; int w, h; uint8_t *px; } Frame;
-typedef struct { int x, y, z, slot, flags, pid, xflags, anim, atick, home, stage, vx, vy, life, hp, lift, mpc, mwait, mstop, mc[3], mdir, skey, macc, aon, amode, aframe, arev, apc, acnt, arel, adir, dying; } Obj;   /* life > 0: a missile in flight; hp: remaining health of a creature (0 = not set yet) */
+typedef struct { int x, y, z, slot, flags, pid, xflags, anim, atick, home, stage, vx, vy, life, hp, lift, mpc, mwait, mstop, mc[3], mdir, skey, macc, aon, amode, aframe, arev, apc, acnt, arel, adir, dying, fly, vz; } Obj;   /* life > 0: a missile in flight; hp: remaining health of a creature (0 = not set yet) */
 #define MISSILE_SLOT 31          /* the thrown-rock image (16x7) */
 #define MISSILE_PID 9000
 #define MISSILE_SPEED 3
@@ -48,7 +48,7 @@ struct Game {
     Obj hero;                         /* hero.slot = 8 */
     int facing, anim_t, moving;
     uint8_t font[46 * 24], fontmap[32]; char **text; int ntext; int day; int energy; int jump_t, jump_z0;
-    int has_scroll, old_data; uint8_t spl_ok[1024], spl_no[1024], spl_pow[1024], spl_fl[1024], spl_chg[1024]; uint8_t cons_ok[1024], cons_eff[1024], cons_amt[1024], cons_left[1024], cons_fl[1024]; int flash_t, tmr_t; uint8_t tmr[64]; unsigned aud_seed; int poison, poison_t, prot, prot_amt, atk_mask; uint8_t cre_hp[1024], cre_imm[1024], cre_fl6[1024], cre_ok[1024], spawn_snd[256], mvstate[1024], kill_ok[1024], kill_rew[1024], kill_fl[1024];   /* 0 = unknown, else movement state + 1 (3 = chase the hero) */  uint8_t scroll_tiles[18 * 32], scroll_map[0x30], font5[46 * 20]; int nexam, nuse, ntake; uint16_t take_pid[512]; int16_t take_gold[512], take_xp[512]; uint8_t counter[256], gflag[256], on_pl[1024], trap_done[1024]; uint16_t hit_pos[1024]; uint8_t zn_n[100], zn_f[100], zn_b[100][4][6]; int dly_arg, dly_t; int nuo; uint8_t uo_on[256]; uint16_t uo_pid[256], uo_item[256]; uint8_t uo_len[256], uo_code[256][256]; uint32_t gbits; int nhid; struct { int room; Obj o; } hid[1024]; int hurt_cd, touch_snd, touch_seen; unsigned rng_seed, rng_last; int ent_tick; uint8_t rs_done[100][16]; uint8_t *aprog[256]; int aprog_len[256], asec[256][4], asec_n[256]; struct { uint8_t has, mode, frame, rev, pc, cnt, rel; } plan[1024]; int want_level; int pull_pid, pull_room; int spawn_pid; int rs_period[100], rs_nb[100]; uint8_t *rs_blk[100][16]; int tm_room, tm_left; uint8_t mv_prog[1024][96]; uint8_t mv_len[1024], mv_step[1024][3], mv_pat[1024]; int lvl1; int nch; uint16_t ch_pid[64], ch_cont[64], ch_key[64]; uint8_t ch_flags[64], ch_trap[64]; int dbg, dbg_verb, dbg_pid, dbg_ran, dbg_execs; unsigned dbg_log[4][3]; unsigned char dbg_tr[48]; int dbg_ntr; int nvm; uint16_t vm_pid[256]; uint8_t vm_len[256], vm_code[256][255]; uint16_t exam_pid[512], exam_text[512], use_pid[512], use_text[512];   /* examine scroll */
+    int has_scroll, old_data; uint8_t spl_ok[1024], spl_no[1024], spl_pow[1024], spl_fl[1024], spl_chg[1024]; uint8_t rng_ok[1024], rng_shots[1024]; int shots_left[1024]; uint8_t cons_ok[1024], cons_eff[1024], cons_amt[1024], cons_left[1024], cons_fl[1024]; int flash_t, tmr_t; uint8_t tmr[64]; unsigned aud_seed; int poison, poison_t, prot, prot_amt, atk_mask; uint8_t cre_hp[1024], cre_imm[1024], cre_fl6[1024], cre_ok[1024], spawn_snd[256], mvstate[1024], kill_ok[1024], kill_rew[1024], kill_fl[1024];   /* 0 = unknown, else movement state + 1 (3 = chase the hero) */  uint8_t scroll_tiles[18 * 32], scroll_map[0x30], font5[46 * 20]; int nexam, nuse, ntake; uint16_t take_pid[512]; int16_t take_gold[512], take_xp[512]; uint8_t counter[256], gflag[256], on_pl[1024], trap_done[1024]; uint16_t hit_pos[1024]; uint8_t zn_n[100], zn_f[100], zn_b[100][4][6]; int dly_arg, dly_t; int nuo; uint8_t uo_on[256]; uint16_t uo_pid[256], uo_item[256]; uint8_t uo_len[256], uo_code[256][256]; uint32_t gbits; int nhid; struct { int room; Obj o; } hid[1024]; int hurt_cd, touch_snd, touch_seen; unsigned rng_seed, rng_last; int ent_tick; uint8_t rs_done[100][16]; uint8_t *aprog[256]; int aprog_len[256], asec[256][4], asec_n[256]; struct { uint8_t has, mode, frame, rev, pc, cnt, rel; } plan[1024]; int want_level; int pull_pid, pull_room; int spawn_pid; int rs_period[100], rs_nb[100]; uint8_t *rs_blk[100][16]; int tm_room, tm_left; uint8_t mv_prog[1024][96]; uint8_t mv_len[1024], mv_step[1024][3], mv_pat[1024]; int lvl1; int nch; uint16_t ch_pid[64], ch_cont[64], ch_key[64]; uint8_t ch_flags[64], ch_trap[64]; int dbg, dbg_verb, dbg_pid, dbg_ran, dbg_execs; unsigned dbg_log[4][3]; unsigned char dbg_tr[48]; int dbg_ntr; int nvm; uint16_t vm_pid[256]; uint8_t vm_len[256], vm_code[256][255]; uint16_t exam_pid[512], exam_text[512], use_pid[512], use_text[512];   /* examine scroll */
     int scroll_t; char scroll_str[256]; long score; int map_open, map_px, map_py, status_open; long gold, xp, level; uint8_t visited[100];
     int has_icons; uint8_t icons[20 * 112]; uint16_t slotpos[8][4]; uint8_t verbtab[16];
     int target, nverbs, verbs[8], menu, sel, prev_joy, msg, msg_t, ninv, inv[64], inv_slot[64], inv_mode, inv_sel, inv_hold;     /* verb menu state */
@@ -180,6 +180,8 @@ Game *game_load(const char *path) {
             for (int i = 0; i < nn; i++) { int pid = rd16(f), it = rd16(f), ln = rd8(f); g->uo_pid[i] = (uint16_t)pid; g->uo_item[i] = (uint16_t)it; g->uo_len[i] = (uint8_t)ln; for (int k = 0; k < ln; k++) g->uo_code[i][k] = (uint8_t)rd8(f); g->nuo = i + 1; } }
         if (rd8(f) == 1) { int nn = rd16(f); if (nn < 0 || nn > 100) nn = 0;                         /* zone boxes (optional): room, count, room flags, 6 bytes per zone */
             for (int i = 0; i < nn; i++) { int rm = rd8(f), nz = rd8(f), fl = rd8(f); if (nz > 4) nz = 4; for (int k = 0; k < nz; k++) for (int j = 0; j < 6; j++) { int v = rd8(f); if (rm >= 0 && rm < 100) g->zn_b[rm][k][j] = (uint8_t)v; } if (rm >= 0 && rm < 100) { g->zn_n[rm] = (uint8_t)nz; g->zn_f[rm] = (uint8_t)fl; } } }
+        if (rd8(f) == 1) { int nn = rd16(f); if (nn < 0 || nn > 1024) nn = 0;                       /* ranged weapons (optional): pid, shots (part byte +3 of a class-4 item) */
+            for (int i = 0; i < nn; i++) { int pid = rd16(f), sh = rd8(f); if (pid >= 0 && pid < 1024) { g->rng_ok[pid] = 1; g->rng_shots[pid] = (uint8_t)sh; g->shots_left[pid] = sh; } } }
         g->has_scroll = 1;
         if (g->old_data) { fprintf(stderr, "cadaver: this level file has no animation data; re-run tools/export_level.py\n"); snprintf(g->scroll_str, sizeof g->scroll_str, "OLD LEVEL FILE. RE-RUN THE EXPORT TOOL TO ANIMATE THE CREATURES."); g->scroll_t = SCROLL_TICKS; }
     }
@@ -295,7 +297,7 @@ static Box box_of(const Game *g, const Obj *o) {
 static int overlap(Box a, Box b) {
     return !(a.x1 < b.x0 || b.x1 < a.x0 || a.y1 < b.y0 || b.y1 < a.y0 || a.z1 < b.z0 || b.z1 < a.z0);
 }
-static int flat(const Game *g, const Obj *o) { const Sprite *s = &g->spr[o->slot]; return o->slot != 8 && ((!s->push && s->fz <= 2) || o->dying > 0); }   /* floor decals: walk-over, drawn under everything */
+static int flat(const Game *g, const Obj *o) { const Sprite *s = &g->spr[o->slot]; return o->slot != 8 && ((!s->push && s->fz <= 2) || o->dying > 0 || o->fly > 0); }   /* floor decals: walk-over, drawn under everything */
 /* Walking pushes only light objects (type byte +$c bit 1, the TAKE bit); bit 0 alone = heavy furniture (altars, pillars) that only the MOVE verb could shift. */
 static int has_contact_script(const Game *g, const Obj *o) { for (int k = 0; k < g->nvm; k++) if (g->vm_pid[k] == (o->pid | 0x8000)) return 1; return 0; }
 static int has_contact_uo(const Game *g, const Obj *q);
@@ -842,13 +844,60 @@ static int held_ranged(const Game *g) {
     for (int i = 0; i < g->ninv; i++) if (g->inv[i] == g->inv_hold) return g->spr[g->inv_slot[i]].b16 == 4;
     return 0;
 }
+static void say(Game *g, int text_id);
 static int fire_weapon(Game *g) {
     Room *r = &g->rooms[g->cur]; Obj *h = &g->hero;
+    int bag = g->inv_hold; if (bag >= 0 && bag < 1024 && g->rng_ok[bag]) {                           /* a bag of stones holds a fixed number of shots (texts 14/15) */
+        if (g->shots_left[bag] <= 0) { say(g, 14); return 0; } }
     int dx = ((g->facing & JOY_RIGHT) ? 1 : 0) - ((g->facing & JOY_LEFT) ? 1 : 0), dy = ((g->facing & JOY_DOWN) ? 1 : 0) - ((g->facing & JOY_UP) ? 1 : 0);
     if ((!dx && !dy) || r->nobj >= 4000) return 0;
     Obj m; memset(&m, 0, sizeof m); m.slot = MISSILE_SLOT; m.pid = MISSILE_PID + (g->spawn_pid++ & 255);
     m.x = h->x + dx * 4; m.y = h->y + dy * 4; m.z = h->z + 10; m.vx = dx; m.vy = dy; m.life = 40;
-    r->objs[r->nobj++] = m; play_sound(g, 0x14); return 1;
+    r->objs[r->nobj++] = m; play_sound(g, 0x14);
+    if (bag >= 0 && bag < 1024 && g->rng_ok[bag] && --g->shots_left[bag] <= 0) say(g, 15);          /* "THAT WAS YOUR LAST SHOT" */
+    return 1;
+}
+/* Throwing ($9b88 -> $9bd4): fire with any other item held (a sword, a helm, a key...) sends it out of the hand in the facing direction. It arcs through the air (z rises, then falls) and lands as an ordinary object; a creature in the way is hurt like by a stone. */
+#define THROW_SPEED 3
+#define THROW_VZ 5
+static int throw_held(Game *g) {
+    Room *r = &g->rooms[g->cur]; Obj *h = &g->hero;
+    int dx = ((g->facing & JOY_RIGHT) ? 1 : 0) - ((g->facing & JOY_LEFT) ? 1 : 0), dy = ((g->facing & JOY_DOWN) ? 1 : 0) - ((g->facing & JOY_UP) ? 1 : 0);
+    int idx = -1; for (int i = 0; i < g->ninv; i++) if (g->inv[i] == g->inv_hold) idx = i;
+    if ((!dx && !dy) || idx < 0 || r->nobj >= 4000) return 0;
+    Obj o; memset(&o, 0, sizeof o); o.pid = g->inv[idx]; o.slot = g->inv_slot[idx];
+    o.x = h->x + dx * 6; o.y = h->y + dy * 6; if (o.x >= r->sx * 8) o.x = r->sx * 8 - 1; if (o.y >= r->sy * 8) o.y = r->sy * 8 - 1; if (o.x < MARGIN) o.x = MARGIN; if (o.y < MARGIN) o.y = MARGIN;
+    o.z = h->z + 12; o.vx = dx * THROW_SPEED; o.vy = dy * THROW_SPEED; o.vz = THROW_VZ; o.fly = 1;
+    r->objs[r->nobj++] = o; g->inv_hold = -1; inv_remove(g, idx); play_sound(g, 0x0e); return 1;
+}
+static void update_thrown(Game *g) {
+    Room *r = &g->rooms[g->cur];
+    for (int i = 0; i < r->nobj; i++) {
+        Obj *o = &r->objs[i]; if (o->fly <= 0) continue;
+        for (int st = 0; st < THROW_SPEED && (o->vx || o->vy); st++) {                                    /* horizontal flight in single steps */
+            int sx = o->vx > 0 ? 1 : o->vx < 0 ? -1 : 0, sy = o->vy > 0 ? 1 : o->vy < 0 ? -1 : 0, stop = 0;
+            o->x += sx; o->y += sy;
+            if (o->x >= r->sx * 8 || o->y >= r->sy * 8 || o->x < MARGIN || o->y < MARGIN) { o->x -= sx; o->y -= sy; stop = 1; }
+            else { Box ob = box_of(g, o);
+                for (int k = 0; k < r->nobj && !stop; k++) { Obj *q = &r->objs[k]; if (k == i || q->life != 0 || q->dying > 0 || flat(g, q)) continue;
+                    if (!overlap(ob, box_of(g, q))) continue;
+                    if (has_contact_script(g, q)) {
+                        int ok = q->pid >= 0 && q->pid < 1024 && g->cre_ok[q->pid];
+                        if (q->hp <= 0) q->hp = ok ? g->cre_hp[q->pid] : CREATURE_HP;
+                        creature_hit_sound(g, q);
+                        if (!(ok && ((g->cre_imm[q->pid] & 1) || (g->cre_fl6[q->pid] & 1)))) { q->hp -= ROCK_POWER; if (q->hp <= 0) start_dying(g, q); }
+                    } else for (int e = 0; e < g->nvm; e++) if (g->vm_pid[e] == (q->pid | 0x1000)) { creature_hit_sound(g, q); run_script(g, q, g->vm_code[e], g->vm_len[e]); break; }
+                    o->x -= sx; o->y -= sy; stop = 1; } }
+            if (stop) { o->vx = o->vy = 0; if (o->vz > 0) o->vz = 0; }
+            if (r != &g->rooms[g->cur]) return;
+        }
+        o->z += o->vz; o->vz--;                                                              /* the arc: up, then down */
+        int rest = 0; Box ob = box_of(g, o);
+        for (int k = 0; k < r->nobj; k++) { const Obj *q = &r->objs[k]; if (k == i || flat(g, q) || q->life != 0) continue;
+            Box qb = box_of(g, q); if (qb.x1 < ob.x0 || ob.x1 < qb.x0 || qb.y1 < ob.y0 || ob.y1 < qb.y0) continue;
+            if (qb.z1 + 1 <= o->z - o->vz && qb.z1 + 1 > rest) rest = qb.z1 + 1; }
+        if (o->vz < 0 && o->z <= rest) { o->z = rest; o->fly = 0; o->vx = o->vy = o->vz = 0; }
+    }
 }
 /* Missiles fly MISSILE_SPEED units a tick in single steps; they stop at the room edge or on the first solid thing, which a creature loses health to. */
 static void update_missiles(Game *g) {
@@ -1058,6 +1107,7 @@ void game_tick(Game *g, int joy) {
         else { if (fire_edge) { g->menu = 0; play_sound(g, 0x37); exec_verb(g, g->verbs[g->sel]); } else if (new_dirs) { int os = g->sel; g->sel = move_sel(g, new_dirs); if (g->sel != os) play_sound(g, 2); } joy &= ~15; }
     } else if (fire_edge && held_class(g) == 1) { cast_spell(g, facing_target(g));   /* a held spell ($ed06) */
     } else if (fire_edge && held_ranged(g)) { fire_weapon(g); joy &= ~15;
+    } else if (fire_edge && g->inv_hold >= 0 && held_class(g) >= 0 && (g->target < 0 || g->nverbs == 0 || (g->rooms[g->cur].objs[g->target].pid >= 0 && has_contact_script(g, &g->rooms[g->cur].objs[g->target]))) && throw_held(g)) { joy &= ~15;   /* any other held item is thrown ($9b88) */
     } else if (fire_edge && g->target >= 0 && g->nverbs > 0) { g->menu = 1; g->sel = 0; joy &= ~15; }
     else if (fire_edge && g->target < 0 && !g->jump_t && hero_grounded(g, r)) { g->jump_t = 1; g->jump_z0 = h->z; }    /* fire with nothing in front: jump */
     int dx = ((joy & JOY_RIGHT) ? 1 : 0) - ((joy & JOY_LEFT) ? 1 : 0);
@@ -1127,6 +1177,7 @@ void game_tick(Game *g, int joy) {
     }
     if (g->pull_pid && g->pull_room != g->cur) g->pull_pid = 0;
     update_missiles(g);
+    update_thrown(g);
     if (!g->touch_seen && g->touch_snd) { stop_sound(g, g->touch_snd); g->touch_snd = 0; }   /* not pushing any more: cut the contact sound */
     g->touch_seen = 0;
     g->moving = 0;
@@ -1493,7 +1544,7 @@ void game_render(const Game *g, uint32_t *fb) {
     DrawItem items[256]; int n = 0;
     for (int i = 0; i < r->nobj && n < 255; i++) {
         const Obj *o = &r->objs[i]; 
-        items[n++] = (DrawItem){ flat(g, o) && o->dying <= 0 ? -1000 : o->x + o->y, o->x, o->y, o->z + o->lift, o->slot, 0, box_of(g, o), !flat(g, o) || o->dying > 0, (o->flags & 1) && g->spr[o->slot].apx != NULL, g->spr[o->slot].nfr ? o->anim : -1 };
+        items[n++] = (DrawItem){ flat(g, o) && o->dying <= 0 && o->fly <= 0 ? -1000 : o->x + o->y, o->x, o->y, o->z + o->lift, o->slot, 0, box_of(g, o), !flat(g, o) || o->dying > 0 || o->fly > 0, (o->flags & 1) && g->spr[o->slot].apx != NULL, g->spr[o->slot].nfr ? o->anim : -1 };
     }
     for (int i = 0; i < r->nwalls && n < 255; i++) {
         const Wall *w = &r->walls[i]; const Sprite *s = &g->spr[w->slot];

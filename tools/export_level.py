@@ -411,4 +411,16 @@ for n in range(100):
     if nz:zs.append((n,nz,rm[0x17],bytes(rm[q+2:q+2+6*nz])))
 P('B',1);P('H',len(zs))
 for n,nz,f,b in zs:P('BBB',n,nz,f);o+=b
+# ranged weapons (optional, after the zones): class byte +0x16 == 4 (stone bag); part byte +3 = number of shots ($ee28/$ef58; texts 14/15/17: "no ammo", "last shot", "n shots left")
+rg=[]
+for pid in range(1024):
+    pr=L.g6.rec(pid)
+    if len(pr)<16:continue
+    e=L.g2.rec(u16(pr,6))
+    if not e or len(e)<0x30 or e[0x16]!=4:continue
+    q=pr[0xc]
+    if q==0 or q+4>len(pr):continue
+    rg.append((pid,pr[q+3]))
+P('B',1);P('H',len(rg))
+for pid,sh in rg:P('HB',pid,sh)
 open(out,'wb').write(o);print(len(o),'bytes,',len(exam),'examine texts')
