@@ -877,7 +877,7 @@ static void hero_gravity(Game *g, Room *r) {
     }
     /* Falling uses the original's gravity ramp ($5767, installed as the hero's vertical program at $6af6 when nothing supports him): 1,1,2,2,3,3,3,4,4,5,5,5,6,6,6,7,7,7,7,8 per tick, then 8. */
     static const int RAMP[20] = { 1, 1, 2, 2, 3, 3, 3, 4, 4, 5, 5, 5, 6, 6, 6, 7, 7, 7, 7, 8 };
-    if (h->z > rest) { h->z -= RAMP[g->fall_t < 19 ? g->fall_t : 19]; g->fall_t++; if (h->z < rest) h->z = rest; } else g->fall_t = 0;
+    if (h->z > rest) { int sp = RAMP[g->fall_t < 19 ? g->fall_t : 19]; h->z -= sp; g->fall_t++; if (h->z <= rest) { h->z = rest; if (sp >= 3) play_sound(g, 0x18); } } else g->fall_t = 0;   /* landing at speed 3 or more thuds (sound $18, $6a8a) */
 }
 
 
@@ -1307,8 +1307,8 @@ void game_tick(Game *g, int joy) {
                 int top = qb.z1 + 1; if (prevz >= top && nz <= top && top > land) land = top;
             }
         }
-        if (land >= 0) { h->z = land; g->jump_t = 0; }
-        else if (nz <= 0 && g->jump_t > 10) { h->z = 0; g->jump_t = 0; }
+        if (land >= 0) { if (prevz - nz >= 3) play_sound(g, 0x18); h->z = land; g->jump_t = 0; }
+        else if (nz <= 0 && g->jump_t > 10) { if (prevz - nz >= 3) play_sound(g, 0x18); h->z = 0; g->jump_t = 0; }
         else { h->z = nz; if (++g->jump_t > (g->tmr[0x21] ? 19 : 26)) { g->jump_t = 0; g->fall_t = 0; } }
     }
     else hero_gravity(g, r);
