@@ -437,4 +437,27 @@ for pid in range(1024):
     if q+5<len(buf):hd.append((pid,buf[q+1],buf[q+5]))
 P('B',1);P('H',len(hd))
 for pid,dm,bt in hd:P('HBB',pid,dm,bt)
+# carry-over table (optional, last): the level code's table at base+8 ($e17a) maps the pid of every carried item to its pid in the NEXT level; items not listed are
+# dropped at a level change. The part state (charges, doses, flags) of carried items is copied across at run time. Written as B 1, H n, then n x (H old pid, H new pid, H new slot or 0xffff).
+import struct as _st
+_d=open(adf,'rb').read();_ix=_st.unpack('>256H',_d[22*512:23*512]);_ent=[(_ix[8+2*i],_ix[9+2*i]) for i in range(40)]
+cy=[]
+_ci=7*(lvl-1)
+if _ci<35 and _ent[_ci][0]:
+    import lzhuf as _lz
+    _code=_lz.decode(_d,_ent[_ci][0]*512)
+    _p=4+u16(_code,4+8)
+    try:L2=Level(adf,gb,lvl+1)
+    except Exception:L2=None
+    while _p+4<=len(_code) and u16(_code,_p)<0x8000 and len(cy)<64:
+        o_,n_=u16(_code,_p),u16(_code,_p+2);_p+=4
+        sl=0xffff
+        if L2:
+            try:
+                pr=L2.g6.rec(n_)
+                if len(pr)>7:sl=u16(pr,6)
+            except Exception:pass
+        cy.append((o_,n_,sl))
+P('B',1);P('H',len(cy))
+for t in cy:P('HHH',*t)
 open(out,'wb').write(o);print(len(o),'bytes,',len(exam),'examine texts')
