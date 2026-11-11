@@ -990,6 +990,7 @@ static void chase_move(Game *g, Room *r, Obj *c) {
     int diff = ay - ax, d6;
     if (ex < 0) { if (ey >= 0) d6 = diff < 0 ? (diff > -2 ? 1 : 2) : (diff < 2 ? 1 : 0); else d6 = diff < 0 ? (diff > -2 ? 3 : 2) : (diff < 2 ? 3 : 4); }
     else { if (ey < 0) d6 = diff < 0 ? (diff > -2 ? 5 : 6) : (diff < 2 ? 5 : 4); else d6 = diff < 0 ? 7 : (diff < 2 ? 7 : 0); }
+    if (g->tmr[0x26]) d6 = (d6 + 4) & 7;                                   /* spell 22 (timer $26): the direction table is rotated by four, so the creature runs away ($966be, tables $96d28/$96d2c) */
     static const int dxs[8] = { 0, 1, 1, 1, 0, -1, -1, -1 }, dys[8] = { -1, -1, 0, 1, 1, 1, 0, -1 };
     int sx = dxs[d6] * (g->mv_step[pid][0] ? g->mv_step[pid][0] : 1), sy = dys[d6] * (g->mv_step[pid][1] ? g->mv_step[pid][1] : 1);
     Box hb = box_of(g, h);
@@ -1157,7 +1158,7 @@ void game_tick(Game *g, int joy) {
     for (int i = 0; i < r->nobj; i++) { Obj *d = &r->objs[i]; if (d->dying <= 0) continue;
         if (g->spr[d->slot].nfr == 8 && g->spr[d->slot].c == 0x44) d->anim = (16 - d->dying) / 2 > 7 ? 7 : (16 - d->dying) / 2;
         if (--d->dying == 0) d->life = -1; }
-    for (int i = 0; i < r->nobj; i++) { Obj *c = &r->objs[i]; if (c->slot < 0 || c->slot > 255 || !g->aprog[c->slot] || !c->aon) continue;      /* animation programs of creatures and props */
+    for (int i = 0; i < r->nobj; i++) { Obj *c = &r->objs[i]; if (c->slot < 0 || c->slot > 255 || !g->aprog[c->slot] || !c->aon) continue; if (g->tmr[0x22] && c->pid >= 0 && c->pid < 1024 && g->cre_ok[c->pid]) continue;      /* animation programs of creatures and props */
         anim_step(g, c);
         if (g_post0d) { g_post0d = 0; if (!g->lvl1) { int pidd = c->pid; for (int k = 0; k < g->nvm; k++) if (g->vm_pid[k] == (pidd | 0x4000)) run_script(g, c, g->vm_code[k], g->vm_len[k]); } }
         if (!g->lvl1 || (c->slot != 111 && c->slot != 112 && c->slot != 116 && c->slot != 121)) c->anim = c->aframe;   /* level 1: the dragon, flame, worm and water lurker keep their hand logic */   /* level 1: walkers 113/117/119 follow their programs (checked against the original's stepper: 3, 2 and 2 ticks per frame; the old hand-measured table was aliased by the capture interval) */
@@ -1194,6 +1195,7 @@ void game_tick(Game *g, int joy) {
     }
     for (int i = 0; i < r->nobj; i++) { Obj *c = &r->objs[i]; int sl = c->slot; if (g->lvl1 ? (sl < 113 || sl > 119 || sl == 116) : !(c->pid >= 0 && c->pid < 1024 && g->mv_len[c->pid])) continue;      /* path-following creatures */
         if (c->z > 0 && c->slot != 119 && c->slot != 116) c->z = c->z > 3 ? c->z - 3 : 0;          /* ground creatures that appear in mid-air (room 70's spider, z 50) drop to the floor */
+        if (g->tmr[0x22]) continue;                                   /* spell 2 (timer $22): creatures neither move ($f6aa), animate ($a946) nor think ($de50) while it runs */
         creature_move(g, r, c);
 }
     if (g->lvl1 && g->cur == 36) { int t = (g->tickno - g->ent_tick) % 211; if ((t == 16 || t == 68) && !((g->prot >> 3) & 1)) change_energy(g, -20); }   /* the dragon's lightning hurts after the flash (unless global bit 3 $984 is set) */
