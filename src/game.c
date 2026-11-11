@@ -46,7 +46,7 @@ struct Game {
     int facing, anim_t, moving;
     uint8_t font[46 * 24], fontmap[32]; char **text; int ntext; int day; int energy; int jump_t, jump_z0, fall_t; int ncarry; uint8_t room_f17[100]; int magic_map; uint16_t carry_old[64], carry_new[64], carry_slot[64];
     int has_scroll, old_data; uint8_t spl_ok[1024], spl_no[1024], spl_pow[1024], spl_fl[1024], spl_chg[1024]; uint8_t rng_ok[1024], rng_shots[1024]; uint16_t rng_ammo[1024]; uint8_t hit_ok[1024], hit_dmg[1024], hit_bit[1024]; int shots_left[1024]; uint8_t cons_ok[1024], cons_eff[1024], cons_amt[1024], cons_left[1024], cons_fl[1024]; int flash_t, tmr_t; uint8_t tmr[64]; unsigned aud_seed; int poison, poison_t, prot, prot_amt, atk_mask; uint8_t cre_hp[1024], cre_imm[1024], cre_fl6[1024], cre_ok[1024], spawn_snd[256], mvstate[1024], kill_ok[1024], kill_rew[1024], kill_fl[1024];   /* 0 = unknown, else movement state + 1 (3 = chase the hero) */  uint8_t scroll_tiles[18 * 32], scroll_map[0x30], font5[46 * 20]; int nexam, nuse, ntake; uint16_t take_pid[512]; int16_t take_gold[512], take_xp[512]; uint8_t counter[256], gflag[256], on_pl[1024], trap_done[1024]; uint16_t hit_pos[1024]; uint8_t zn_n[100], zn_f[100], zn_b[100][4][6]; int dly_arg, dly_t; int nuo; uint8_t uo_on[256]; uint16_t uo_pid[256], uo_item[256]; uint8_t uo_len[256], uo_code[256][256]; uint32_t gbits; int nhid; struct { int room; Obj o; } hid[1024]; int hurt_cd, touch_snd, touch_seen; unsigned rng_seed, rng_last; int ent_tick; uint8_t rs_done[100][16]; uint8_t *aprog[256]; int aprog_len[256], asec[256][4], asec_n[256]; struct { uint8_t has, mode, frame, rev, pc, cnt, rel; } plan[1024]; int want_level; int pull_pid, pull_room; int spawn_pid; int rs_period[100], rs_nb[100]; uint8_t *rs_blk[100][16]; int tm_room, tm_left; uint8_t mv_prog[1024][96]; uint8_t mv_len[1024], mv_step[1024][3], mv_pat[1024]; int lvl1; int nch; uint16_t ch_pid[64], ch_cont[64], ch_key[64]; uint8_t ch_flags[64], ch_trap[64]; int dbg, dbg_verb, dbg_pid, dbg_ran, dbg_execs; unsigned dbg_log[4][3]; unsigned char dbg_tr[48]; int dbg_ntr; int nvm; uint16_t vm_pid[256]; uint8_t vm_len[256], vm_code[256][255]; uint16_t exam_pid[512], exam_text[512], use_pid[512], use_text[512];   /* examine scroll */
-    int pm_open, pm_sel, pm_req, pm_crt, pm_fs, mute; int scroll_t; char scroll_str[256]; long score; int map_open, map_px, map_py, status_open; long gold, xp, level; uint8_t visited[100];
+    uint8_t amb[16]; int namb; int pm_open, pm_sel, pm_req, pm_crt, pm_fs, mute; int scroll_t; char scroll_str[256]; long score; int map_open, map_px, map_py, status_open; long gold, xp, level; uint8_t visited[100];
     int has_icons; uint8_t icons[20 * 112]; uint16_t slotpos[8][4]; uint8_t verbtab[16];
     int target, nverbs, verbs[8], menu, sel, prev_joy, msg, msg_t, ninv, inv[64], inv_slot[64], inv_mode, inv_sel, inv_hold;     /* verb menu state */
     uint16_t wallflag[MAX_WALLIDX]; uint8_t walldoor[MAX_WALLIDX]; int bump_timer, bumped_now;    /* wall-record flags, shared by the two rooms a wall joins */
@@ -273,14 +273,30 @@ static void play_sound(Game *g, int snd) {
     if (snd == 0) for (int q = 0; q < 8; q++) if (g->st[q].on && g->st[q].snd == 0) g->st[q].vmul = 1.0 + FOOTSTEP_VARIANCE * audio_rand(g);
 }
 
+static void snd_restart_best(Game *g) {
+    int best = -1, bp = 0;
+    for (int i = 0; i < 20; i++) if (g->sndq[i][1] && g->sndq[i][1] > bp) { bp = g->sndq[i][1]; best = g->sndq[i][0]; }
+    int sn = best >= 0 ? best : 0x15, m = 0; for (int c = 0; c < 4; c++) if (SNDTAB[sn][2 + c]) m |= 1 << c; snd_start_scripts(g, sn, m);
+}
 /* $153fa: stop a sound: drop it from the queue; unless a plain sound holds the lock, restart the most important queued sound, or when none is left
  * play sound $15, whose scripts reset all four channels. */
 static void stop_sound(Game *g, int snd) {
     for (int i = 0; i < 20; i++) if (g->sndq[i][1] && g->sndq[i][0] == snd) { g->sndq[i][0] = g->sndq[i][1] = 0; break; }
     if (g->snd_lock) return;
-    int best = -1, bp = 0;
-    for (int i = 0; i < 20; i++) if (g->sndq[i][1] && g->sndq[i][1] > bp) { bp = g->sndq[i][1]; best = g->sndq[i][0]; }
-    { int sn = best >= 0 ? best : 0x15, m = 0; for (int c = 0; c < 4; c++) if (SNDTAB[sn][2 + c]) m |= 1 << c; snd_start_scripts(g, sn, m); }
+    snd_restart_best(g);
+}
+/* Creature sounds ($154d6 / $15406 / $154b4): a creature whose type has a looping sound (type byte +$1e) registers it in the queue while it is active in the room and drops it when it
+ * dies or the room is left; the strongest queued sound keeps playing in between and resumes when a contact sound ends.  Without this a sound of a long gone creature came back after every push. */
+static void amb_sync(Game *g, int entry) {
+    const Room *r = &g->rooms[g->cur]; uint8_t want[16]; int nw = 0;
+    for (int i = 0; i < r->nobj; i++) { const Obj *o = &r->objs[i]; int sn = g->spawn_snd[o->slot & 255] - 1;
+        if (sn < 0 || sn >= 69 || o->dying > 0 || o->life < 0 || !(SNDTAB[sn][0] & 0x80)) continue;
+        int dup = 0; for (int k = 0; k < nw; k++) if (want[k] == sn) dup = 1; if (!dup && nw < 16) want[nw++] = (uint8_t)sn; }
+    for (int k = g->namb - 1; k >= 0; k--) { int in = 0; for (int j = 0; j < nw; j++) if (want[j] == g->amb[k]) in = 1;
+        if (!in) { int id = g->amb[k]; g->amb[k] = g->amb[--g->namb]; stop_sound(g, id); } }
+    for (int j = 0; j < nw; j++) { int have = 0; for (int k = 0; k < g->namb; k++) if (g->amb[k] == want[j]) have = 1;
+        if (!have && g->namb < 16) { g->amb[g->namb++] = want[j]; snd_enqueue(g, want[j], SNDTAB[want[j]][0] & 0x7f); } }
+    if (entry && !g->snd_lock) snd_restart_best(g);
 }
 
 /* One register write of the stream's script onto a Paula channel. */
@@ -1201,13 +1217,14 @@ void game_tick(Game *g, int joy) {
               for (int k = 0; k < g->nvm; k++) if (g->vm_pid[k] == (self.pid | 0x4000)) run_script(g, &self, g->vm_code[k], g->vm_len[k]); } }
         if (g->lvl1 && g->cur == 36) { static const uint8_t flame[] = { 0x24, 0x01, 0xe5, 51, 51, 38, 0xfe, 0x24, 0x01, 0xe5, 54, 51, 38, 0xfe, 0x24, 0x01, 0xe5, 57, 51, 38, 0xfe, 0x17 };   /* dragon flame (pid 485): three flames measured from the emulator (around (54,51,38)); the original spawns it from the dragon's animation event, not decoded yet */
             run_script(g, &g->hero, flame, (int)sizeof flame); }
-        r = &g->rooms[g->cur]; }
+        r = &g->rooms[g->cur]; amb_sync(g, 1); }
     else if (g->tm_left > 0 && --g->tm_left == 0) {
         g->tm_left = g->rs_period[g->cur] * 17;
         for (int b = 0; b < g->rs_nb[g->cur]; b++) { const uint8_t *c = g->rs_blk[g->cur][b]; if ((c[1] & 0x7f) != 0x0e) continue;
             if (!(c[1] & 0x80)) { if (g->rs_done[g->cur][b]) continue; g->rs_done[g->cur][b] = 1; }   /* timer blocks without bit 7 fire once (level 4's "the way back closes" cover), those with it repeat (respawns) */
             Vm m = { g, &g->hero, c, c[0], 2, 0, 0 }; vm_block(&m); }
     }
+    amb_sync(g, 0);                                                        /* creature sounds follow the creatures present */
     if (g->status_open) { if ((joy & 0x1F) && !(prev & 0x1F)) g->status_open = 0; return; }              /* diary panel: waits for a key ($9d68) */
     if ((joy & JOY_DEBUG) && !(prev & JOY_DEBUG)) g->dbg ^= 1;
     { int ed = (joy & ~prev);                                                                  /* rucksack: Space = single item, Return = grid, H = hold */
