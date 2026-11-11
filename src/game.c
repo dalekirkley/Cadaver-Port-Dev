@@ -691,7 +691,7 @@ static void exec_verb(Game *g, int verb) {
     if (verb == 3) {                                                                  /* open a chest: lid up (state bit), its contents are spawned by its script */
         Obj *ch = &r->objs[g->target];
         int ci = -1; for (int i = 0; i < g->nch; i++) if (g->ch_pid[i] == ch->pid) ci = i;
-        if (ci >= 0 && (ch->flags & 1)) { if (g->ch_flags[ci] & 0x20) { ch->flags &= ~1; play_sound(g, 0x38); } return; }          /* open: only some chests close again */
+        if (ci >= 0 && (ch->flags & 1)) { if (g->ch_flags[ci] & 0x20) { ch->flags &= ~1; play_sound(g, 0x38); } else say(g, 3); return; }          /* open: only some chests close again */
         if (ci >= 0 && g->ch_trap[ci]) { change_energy(g, -g->ch_trap[ci]); g->ch_trap[ci] = 0; say(g, 50); play_sound(g, 0x24); return; }   /* a trap goes off first (once) */
         if (ci >= 0 && g->ch_key[ci]) {                                                /* locked: the key must be in the rucksack */
             int ki = -1; for (int i = 0; i < g->ninv; i++) if (g->inv[i] == g->ch_key[ci]) ki = i;
@@ -699,11 +699,13 @@ static void exec_verb(Game *g, int verb) {
             if (g->ch_flags[ci] & 2) inv_remove(g, ki);                                /* the key is used up */
             g->ch_key[ci] = 0; play_sound(g, 0x12);
         }
+        int opened_contents = 0;
         if (ci >= 0 && g->ch_cont[ci]) {                                               /* contents appear where the chest stands */
             int id = g->ch_cont[ci], got = 0; Obj o2;
             for (int i = 0; i < g->nhid && !got; i++) if (g->hid[i].o.pid == id) { o2 = g->hid[i].o; g->hid[i] = g->hid[--g->nhid]; got = 1; }
             for (int rm = 0; rm < 100 && !got; rm++) { Room *r2 = &g->rooms[rm]; if (!r2->valid || rm == g->cur) continue;
                 for (int i = 0; i < r2->nobj; i++) if (r2->objs[i].pid == id) { o2 = r2->objs[i]; r2->objs[i] = r2->objs[--r2->nobj]; got = 1; break; } }
+            opened_contents = got;
             if (got) {                                                                  /* pop out beside the chest (far side from the hero first), else on its lid */
                 o2.flags &= ~0x90; const Sprite *cs = &g->spr[ch->slot], *is = &g->spr[o2.slot];
                 int fdx = (g->facing & JOY_RIGHT) ? 1 : (g->facing & JOY_LEFT) ? -1 : 0, fdy = (g->facing & JOY_DOWN) ? 1 : (g->facing & JOY_UP) ? -1 : 0;
@@ -721,9 +723,11 @@ static void exec_verb(Game *g, int verb) {
             g->ch_cont[ci] = 0;
         }
         if (!(ch->flags & 1)) {
+            int n0 = r->nobj, msg0 = g->msg_t; long gold0 = g->gold, xp0 = g->xp; int en0 = g->energy, sc0 = g->scroll_t;
             ch->flags |= 1; play_sound(g, 0x38);
-            for (int i = 0; i < g->nvm; i++) if (g->vm_pid[i] == ch->pid) run_script(g, ch, g->vm_code[i], g->vm_len[i]);
-        } else say(g, 4);
+            for (int i = 0; i < g->nvm; i++) if (g->vm_pid[i] == ch->pid) { run_script(g, ch, g->vm_code[i], g->vm_len[i]); }
+            if (g->cur == r - g->rooms && r->nobj == n0 && g->gold == gold0 && g->xp == xp0 && g->energy == en0 && g->scroll_t == sc0 && g->msg_t <= msg0 && !opened_contents) say(g, 3);   /* searched, found nothing */
+        } else say(g, 3);
         return;
     }
     if (verb == 12 || verb == 15) {                                                                 /* use the held item on the target: sound $1e, then the target's event-0x12 block for that item */
@@ -769,6 +773,8 @@ static void exec_verb(Game *g, int verb) {
             snprintf(g->scroll_str, sizeof g->scroll_str, "%s", g->text[g->use_text[i]]); g->scroll_t = SCROLL_TICKS; return;
         }
     }
+    { const Sprite *ts = &g->spr[r->objs[g->target].slot];                              /* using a movable container-like thing (barrel, sack, bowl, urn, corpse) searches it */
+      if (verb == 6 && (ts->c & 0x47) == 1) { say(g, 3); return; } }                   /* "YOU FIND NOTHING" */
     say(g, 4);                                                                        /* "NOTHING HAPPENS" until the other verbs exist */
 }
 
