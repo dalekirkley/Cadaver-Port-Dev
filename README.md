@@ -10,3 +10,6 @@ Build: `cmake -S . -B build && cmake --build build --config Release`, run `cadav
 Controls: arrows / WASD. Esc quits. Ctrl or Space = fire (menu, jump). F1 or M = map of the rooms entered. Re-run the export after updating: creature animation and movement data were added to the level files on 2026-11-07 and the held-item panel, room-name base, frame-0 image offsets, wall cubes and animation programs (older files still load, but creatures stay still, the held item is not shown, and some room names and floor-cover sprites are wrong). F6-F10 load data\level1.bin ... level5.bin (export each with the last argument of the tool = level number). `dump` is a headless test driver: `dump data/level1.bin "R45,U12" out`.
 
 Status: level 1 rooms, walking, pushing, room exits. No HUD, items, enemies, sound or doors yet.
+
+## Tests
+`tests/run.sh data/level1.bin [data/level2.bin]` builds and runs a random-input fuzz (ASAN/UBSAN) and a level-change carry check. It needs level files exported from your own disks, so CI does not run it.
