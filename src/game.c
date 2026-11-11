@@ -852,7 +852,7 @@ static int fire_weapon(Game *g) {
         if (g->shots_left[bag] <= 0) { say(g, 14); return 0; } }
     int dx = ((g->facing & JOY_RIGHT) ? 1 : 0) - ((g->facing & JOY_LEFT) ? 1 : 0), dy = ((g->facing & JOY_DOWN) ? 1 : 0) - ((g->facing & JOY_UP) ? 1 : 0);
     if ((!dx && !dy) || r->nobj >= 4000) return 0;
-    Obj m; memset(&m, 0, sizeof m); m.slot = MISSILE_SLOT; m.pid = MISSILE_PID + (g->spawn_pid++ & 255); m.stone = 1; launch(g, &m, dx, dy); m.z = h->z + 10;
+    Obj m; memset(&m, 0, sizeof m); m.slot = MISSILE_SLOT; m.pid = MISSILE_PID + (g->spawn_pid++ & 255); m.stone = 1; launch(g, &m, dx, dy);
     r->objs[r->nobj++] = m; play_sound(g, 0x14);
     if (bag >= 0 && bag < 1024 && g->rng_ok[bag] && --g->shots_left[bag] <= 0) {                   /* the last stone: "THAT WAS YOUR LAST SHOT", and the empty bag is gone for good */
         say(g, 15); g->inv_hold = -1;
@@ -865,9 +865,12 @@ static int fire_weapon(Game *g) {
 static const int THROW_H[18] = { 4, 4, 3, 3, 3, 2, 2, 2, 2, 2, 1, 1, 1, 1, 1, 1, 1, 1 };
 static const int THROW_V[17] = { 6, 6, 6, 4, 4, 2, 1, 0, 0, -1, -2, -4, -4, -6, -6, -6, -7 };
 static const int FALL_V[20] = { -1, -1, -2, -2, -3, -3, -3, -4, -4, -5, -5, -5, -6, -6, -6, -7, -7, -7, -7, -8 };
-static void launch(Game *g, Obj *o, int dx, int dy) { Room *r = &g->rooms[g->cur]; const Obj *h = &g->hero;
-    o->x = h->x + dx * 6; o->y = h->y + dy * 6; if (o->x >= r->sx * 8) o->x = r->sx * 8 - 1; if (o->y >= r->sy * 8) o->y = r->sy * 8 - 1; if (o->x < MARGIN) o->x = MARGIN; if (o->y < MARGIN) o->y = MARGIN;
-    o->z = h->z + 12; o->vx = dx; o->vy = dy; o->vz = 0; o->fly = 1; }
+/* Spawn position and height ($f122, called from $9bd4 with d7 = -30 for a thrown item and from the missile spawner $10424 with d7 = 0): the object appears just outside the hero's box on the facing side;
+   a thrown item starts 30 units above the hero's feet (d2 = 30 + hero z0), a stone at 3/4 of his height (30/2 + 30/4 = 22 above his feet). */
+static void launch(Game *g, Obj *o, int dx, int dy) { Room *r = &g->rooms[g->cur]; const Obj *h = &g->hero; const Sprite *s = &g->spr[o->slot];
+    o->x = dx > 0 ? h->x + s->fx : dx < 0 ? h->x - HERO_FX : h->x; o->y = dy > 0 ? h->y + s->fy : dy < 0 ? h->y - HERO_FY : h->y;
+    if (o->x >= r->sx * 8) o->x = r->sx * 8 - 1; if (o->y >= r->sy * 8) o->y = r->sy * 8 - 1; if (o->x < MARGIN) o->x = MARGIN; if (o->y < MARGIN) o->y = MARGIN;
+    o->z = h->z + (o->stone ? 22 : 30); o->vx = dx; o->vy = dy; o->vz = 0; o->fly = 1; }
 static int throw_held(Game *g) {
     Room *r = &g->rooms[g->cur];
     int dx = ((g->facing & JOY_RIGHT) ? 1 : 0) - ((g->facing & JOY_LEFT) ? 1 : 0), dy = ((g->facing & JOY_DOWN) ? 1 : 0) - ((g->facing & JOY_UP) ? 1 : 0);
