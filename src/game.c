@@ -1327,7 +1327,7 @@ void game_tick(Game *g, int joy) {
             Obj gh = *h; gh.x += dx; gh.y += dy; Box gb = box_of(g, &gh); int snd = 0;
             for (int i = 0; i < r->nobj && !snd; i++) { const Obj *q = &r->objs[i]; if (flat(g, q) || q->dying > 0 || !overlap(gb, box_of(g, q))) continue;
                 if (scenery(g, q)) { snd = -1; break; }
-                int ty = g->spr[q->slot].b1d; if (pushable(g, q)) { snd = 16; break; } snd = ty >= 0 && ty < 19 ? touch_tab[ty] : 57; }
+                int ty = g->spr[q->slot].b1d; snd = ty >= 0 && ty < 19 ? touch_tab[ty] : 57; }   /* always the object's own type entry: emulator, room 0: the type-16 object plays $34, the type-1 barrel $10 */
             if (snd < 0) snd = 0; else if (snd != g->touch_snd) { if (g->touch_snd) stop_sound(g, g->touch_snd); if (snd) play_sound(g, snd); } if (snd != g->touch_snd && g->touch_snd) stop_sound(g, g->touch_snd); g->touch_snd = snd; g->touch_seen = 1;
         }
         if (try_move(g, r, h, dx, dy, 0)) { if (pulled) try_move(g, r, pulled, dx, dy, 0);
