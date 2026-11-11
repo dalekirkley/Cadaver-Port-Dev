@@ -812,7 +812,8 @@ static int try_step_up(Game *g, Room *r, int dx, int dy) {
 
 /* Gravity: the hero rests on the highest object top under his feet (or the floor) and drops a few units per tick. */
 /* Jump profile measured in the original (hero z above the take-off height after each logic tick; 20 ticks, apex 35). */
-static const uint8_t JUMP_Z[20] = {5, 10, 14, 18, 22, 26, 29, 32, 34, 35, 34, 32, 29, 26, 22, 18, 14, 10, 5, 0};
+/* Jump arc: the original program at $5736 (per-tick z deltas 5,5,4,4,4,4,3,3,2,1,-1,-2,-3,-3,-4,-4,-4,-4,-5,-5,-5,-6,-6,-7,-7,-8), as running totals from the takeoff height. */
+static const int JUMP_Z[26] = {5,10,14,18,22,26,29,32,34,35,34,32,29,26,22,18,14,10,5,0,-5,-11,-17,-24,-31,-39};
 static int hero_grounded(const Game *g, const Room *r) {
     const Obj *h = &g->hero; Box hb = box_of(g, h); int rest = 0;
     for (int i = 0; i < r->nobj; i++) {
@@ -1260,7 +1261,8 @@ void game_tick(Game *g, int joy) {
             }
         }
         if (land >= 0) { h->z = land; g->jump_t = 0; }
-        else { h->z = nz; if (++g->jump_t > 20) g->jump_t = 0; }
+        else if (nz <= 0 && g->jump_t > 10) { h->z = 0; g->jump_t = 0; }
+        else { h->z = nz; if (++g->jump_t > 26) { g->jump_t = 0; g->fall_t = 0; } }
     }
     else hero_gravity(g, r);
     /* Room zones ($8b54): the hero's box overlapping zone n of the room runs the room's event-0x0f block for n (blocks without the keep bit run once). Rooms with pits and plates are handled below. */
