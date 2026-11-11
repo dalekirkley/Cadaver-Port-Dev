@@ -142,7 +142,7 @@ int WINAPI WinMain(HINSTANCE hi, HINSTANCE hp, LPSTR cmd, int show) {
         { int rl = game_level_request(g); if (rl) pending_level = rl; }
         if (pending_level) {
             char p[64]; snprintf(p, sizeof p, "data\\level%d.bin", pending_level); pending_level = 0;
-            Game *ng = game_load(p); if (ng) { game_free(g); g = ng; g_game = g; next = t; }
+            Game *ng = game_load(p); if (ng) { game_carry(ng, g); game_free(g); g = ng; g_game = g; next = t; }
         }
         audio_pump(g, intro);
         if (intro) intro_render(intro, fb); else game_render(g, fb);

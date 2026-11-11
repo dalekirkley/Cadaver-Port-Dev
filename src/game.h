@@ -34,5 +34,6 @@ int game_debug_text(const Game *g, char *buf, int n);
 void game_change_energy(Game *g, int delta);
 void game_cycle_room(Game *g, int dir);   /* debug: PageUp/PageDown */
 int game_level_request(Game *g);   /* returns and clears a requested level number (0 = none) */
+void game_carry(Game *dst, const Game *src);   /* copy the hero's character to the game of the next level */
 void game_hero(const Game *g, int *x, int *y, int *z);
 #endif

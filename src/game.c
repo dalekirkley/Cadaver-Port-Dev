@@ -1627,6 +1627,8 @@ int game_debug_text(const Game *g, char *buf, int n) {
     return 1;
 }
 
+/* Level change: the hero's character (health, gold, experience, day count, poison and protection) goes with him; the rucksack stays behind because item ids are level-specific (unverified against the original). */
+void game_carry(Game *dst, const Game *src) { dst->energy = src->energy; dst->gold = src->gold; dst->xp = src->xp; dst->level = src->level; dst->score = src->score; dst->day = src->day; dst->poison = src->poison; dst->poison_t = src->poison_t; dst->prot = src->prot; dst->prot_amt = src->prot_amt; }
 int game_level_request(Game *g) { int l = g->want_level; g->want_level = 0; return l; }
 
 /* Debug: step to the next/previous valid room and stand in its middle (PageUp / PageDown in the window). */
