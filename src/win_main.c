@@ -42,6 +42,8 @@ static void audio_pump(Game *g, Intro *in) {
     }
 }
 
+static int esc_block;
+static void toggle_fullscreen(HWND h);
 static int read_joy(void) {
     int j = 0;
 #define K(vk) (GetAsyncKeyState(vk) & 0x8000)
@@ -52,6 +54,7 @@ static int read_joy(void) {
     if (K(VK_CONTROL) || K('X') || K('Z')) j |= JOY_FIRE;
     if (K(VK_SPACE)) j |= JOY_INV;
     if (K(VK_RETURN)) j |= JOY_LIST;
+    if (K(VK_ESCAPE)) { if (!esc_block) j |= JOY_MENU; } else esc_block = 0;   /* Esc opens the options menu (not right after it skipped the intro) */
     if (K('H')) j |= JOY_HOLD;
     if (K(VK_F1) || K('M')) j |= JOY_MAP;
     if (K(VK_F12)) j |= JOY_DEBUG;
@@ -76,7 +79,6 @@ static LRESULT CALLBACK wndproc(HWND h, UINT m, WPARAM w, LPARAM l) {
     switch (m) {
     case WM_DESTROY: running = 0; PostQuitMessage(0); return 0;
     case WM_KEYDOWN:
-        if (w == VK_ESCAPE) { running = 0; PostQuitMessage(0); }
         if (w == VK_F2 && !(l & (1 << 30))) crt_on ^= 1;
         if (w == VK_F11 && !(l & (1 << 30))) toggle_fullscreen(h);
         if ((w == VK_PRIOR || w == VK_NEXT) && g_game) game_cycle_room(g_game, w == VK_NEXT ? 1 : -1);   /* debug: walk through the rooms */                    /* F2: CRT filter on/off */
@@ -137,13 +139,15 @@ int WINAPI WinMain(HINSTANCE hi, HINSTANCE hp, LPSTR cmd, int show) {
         MSG m; while (PeekMessage(&m, NULL, 0, 0, PM_REMOVE)) { if (m.message == WM_QUIT) running = 0; TranslateMessage(&m); DispatchMessage(&m); }
         LARGE_INTEGER now; QueryPerformanceCounter(&now); double t = (double)(now.QuadPart - t0.QuadPart) / fq.QuadPart;
         int steps = 0;
-        while (t >= next && steps < 5) { if (intro) { if (intro_tick(intro, read_joy())) { intro_free(intro); intro = NULL; } } else game_tick(g, read_joy()); next += tick; steps++; }
+        while (t >= next && steps < 5) { if (intro) { if (intro_tick(intro, read_joy() & ~JOY_MENU)) { intro_free(intro); intro = NULL; esc_block = 1; } } else game_tick(g, read_joy()); next += tick; steps++; }
         if (steps > 4) next = t;
         { int rl = game_level_request(g); if (rl) pending_level = rl; }
         if (pending_level) {
             char p[64]; snprintf(p, sizeof p, "data\\level%d.bin", pending_level); pending_level = 0;
             Game *ng = game_load(p); if (ng) { game_carry(ng, g); game_free(g); g = ng; g_game = g; next = t; }
         }
+        if (!intro) { game_menu_status(g, crt_on, fullscreen); int rq = game_menu_request(g);          /* actions chosen in the Esc menu */
+            if (rq & 1) running = 0; if (rq & 2) crt_on ^= 1; if (rq & 4) toggle_fullscreen(hw); }
         audio_pump(g, intro);
         if (intro) intro_render(intro, fb); else game_render(g, fb);
         { static char last[512]; char dt[512];                      /* F12: debug line in the title and in cadaver_debug.txt */

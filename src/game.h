@@ -18,6 +18,7 @@
 #define JOY_FIRE 0x10
 #define JOY_INV 0x20                       /* Space: single item view of the rucksack */
 #define JOY_LIST 0x100                     /* Return: whole rucksack grid */
+#define JOY_MENU 0x400                     /* Esc: in-game options menu */
 #define JOY_HOLD 0x200                     /* H: pick up / put down the selected hand item */
 
 typedef struct Game Game;
@@ -35,5 +36,7 @@ void game_change_energy(Game *g, int delta);
 void game_cycle_room(Game *g, int dir);   /* debug: PageUp/PageDown */
 int game_level_request(Game *g);   /* returns and clears a requested level number (0 = none) */
 void game_carry(Game *dst, const Game *src);   /* copy the hero's character to the game of the next level */
+int game_menu_request(Game *g);   /* returns and clears the menu's pending window actions: 1 quit, 2 toggle CRT filter, 4 toggle fullscreen */
+void game_menu_status(Game *g, int crt, int fullscreen);   /* the window tells the menu the current CRT / fullscreen state */
 void game_hero(const Game *g, int *x, int *y, int *z);
 #endif

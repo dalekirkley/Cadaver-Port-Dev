@@ -46,7 +46,7 @@ struct Game {
     int facing, anim_t, moving;
     uint8_t font[46 * 24], fontmap[32]; char **text; int ntext; int day; int energy; int jump_t, jump_z0, fall_t; int ncarry; uint8_t room_f17[100]; int magic_map; uint16_t carry_old[64], carry_new[64], carry_slot[64];
     int has_scroll, old_data; uint8_t spl_ok[1024], spl_no[1024], spl_pow[1024], spl_fl[1024], spl_chg[1024]; uint8_t rng_ok[1024], rng_shots[1024]; uint16_t rng_ammo[1024]; uint8_t hit_ok[1024], hit_dmg[1024], hit_bit[1024]; int shots_left[1024]; uint8_t cons_ok[1024], cons_eff[1024], cons_amt[1024], cons_left[1024], cons_fl[1024]; int flash_t, tmr_t; uint8_t tmr[64]; unsigned aud_seed; int poison, poison_t, prot, prot_amt, atk_mask; uint8_t cre_hp[1024], cre_imm[1024], cre_fl6[1024], cre_ok[1024], spawn_snd[256], mvstate[1024], kill_ok[1024], kill_rew[1024], kill_fl[1024];   /* 0 = unknown, else movement state + 1 (3 = chase the hero) */  uint8_t scroll_tiles[18 * 32], scroll_map[0x30], font5[46 * 20]; int nexam, nuse, ntake; uint16_t take_pid[512]; int16_t take_gold[512], take_xp[512]; uint8_t counter[256], gflag[256], on_pl[1024], trap_done[1024]; uint16_t hit_pos[1024]; uint8_t zn_n[100], zn_f[100], zn_b[100][4][6]; int dly_arg, dly_t; int nuo; uint8_t uo_on[256]; uint16_t uo_pid[256], uo_item[256]; uint8_t uo_len[256], uo_code[256][256]; uint32_t gbits; int nhid; struct { int room; Obj o; } hid[1024]; int hurt_cd, touch_snd, touch_seen; unsigned rng_seed, rng_last; int ent_tick; uint8_t rs_done[100][16]; uint8_t *aprog[256]; int aprog_len[256], asec[256][4], asec_n[256]; struct { uint8_t has, mode, frame, rev, pc, cnt, rel; } plan[1024]; int want_level; int pull_pid, pull_room; int spawn_pid; int rs_period[100], rs_nb[100]; uint8_t *rs_blk[100][16]; int tm_room, tm_left; uint8_t mv_prog[1024][96]; uint8_t mv_len[1024], mv_step[1024][3], mv_pat[1024]; int lvl1; int nch; uint16_t ch_pid[64], ch_cont[64], ch_key[64]; uint8_t ch_flags[64], ch_trap[64]; int dbg, dbg_verb, dbg_pid, dbg_ran, dbg_execs; unsigned dbg_log[4][3]; unsigned char dbg_tr[48]; int dbg_ntr; int nvm; uint16_t vm_pid[256]; uint8_t vm_len[256], vm_code[256][255]; uint16_t exam_pid[512], exam_text[512], use_pid[512], use_text[512];   /* examine scroll */
-    int scroll_t; char scroll_str[256]; long score; int map_open, map_px, map_py, status_open; long gold, xp, level; uint8_t visited[100];
+    int pm_open, pm_sel, pm_req, pm_crt, pm_fs, mute; int scroll_t; char scroll_str[256]; long score; int map_open, map_px, map_py, status_open; long gold, xp, level; uint8_t visited[100];
     int has_icons; uint8_t icons[20 * 112]; uint16_t slotpos[8][4]; uint8_t verbtab[16];
     int target, nverbs, verbs[8], menu, sel, prev_joy, msg, msg_t, ninv, inv[64], inv_slot[64], inv_mode, inv_sel, inv_hold;     /* verb menu state */
     uint16_t wallflag[MAX_WALLIDX]; uint8_t walldoor[MAX_WALLIDX]; int bump_timer, bumped_now;    /* wall-record flags, shared by the two rooms a wall joins */
@@ -301,6 +301,7 @@ static void paula_latch(Chan *c) {                                          /* D
 
 
 void game_audio_mix(Game *g, int16_t *out, int n, int rate) {
+    if (g->mute) { memset(out, 0, (size_t)n * sizeof *out); return; }
     for (int i = 0; i < n; i++) {
         for (int q = 0; q < 8; q++) {                                           /* the original engine's register streams, 50 Hz */
             SndState *s = &g->st[q]; if (!s->on) continue;
@@ -1177,6 +1178,17 @@ void game_tick(Game *g, int joy) {
     int fire_edge = (joy & JOY_FIRE) && !(g->prev_joy & JOY_FIRE), new_dirs = (joy & 15) & ~(g->prev_joy & 15);
     if (fire_edge && !g->menu) g->pull_pid = 0;                 /* fire ends pull mode (choosing MOVE itself happens inside the menu below) */
     int prev = g->prev_joy; g->prev_joy = joy;
+    if ((joy & JOY_MENU) && !(prev & JOY_MENU)) { g->pm_open ^= 1; g->pm_sel = 0; if (g->pm_open) play_sound(g, 0x37); }   /* Esc: options menu, the game stands still while it is open */
+    if (g->pm_open) {
+        int nd = (joy & 15) & ~(prev & 15), ed = joy & ~prev;
+        if (nd & JOY_UP) { g->pm_sel = (g->pm_sel + 4) % 5; play_sound(g, 2); }
+        if (nd & JOY_DOWN) { g->pm_sel = (g->pm_sel + 1) % 5; play_sound(g, 2); }
+        if (ed & (JOY_LIST | JOY_FIRE)) {
+            play_sound(g, 0x37);
+            switch (g->pm_sel) { case 0: g->pm_open = 0; break; case 1: g->mute ^= 1; break; case 2: g->pm_req |= 2; break; case 3: g->pm_req |= 4; break; case 4: g->pm_req |= 1; break; }
+        }
+        return;
+    }
     int first_visit = !g->visited[g->cur]; g->visited[g->cur] = 1;
     if (g->tm_room != g->cur + 1) { g->tm_room = g->cur + 1; g->ent_tick = g->tickno; g->tm_left = g->rs_period[g->cur] * 17;          /* room timer restarts on entry */
         for (int ev = first_visit ? 0x1c : 0x06; ev >= 0x06; ev -= 0x16) {                              /* entry events: 0x1c on the first visit ($e51c), then 0x06 on every entry ($e74e); they spawn most monsters */
@@ -1643,6 +1655,20 @@ static void draw_status(const Game *g, uint32_t *fb) {
     snprintf(b, sizeof b, "%d%%", rooms ? seen * 100 / rooms : 0); put5(g, fb, b, 134, 47);
     if (g->ntext > 63) put5(g, fb, g->text[63], 134, 53);
 }
+/* Esc menu: the scroll panel with a title, five choices and an arrow beside the selected one. */
+static void draw_menu(const Game *g, uint32_t *fb) {
+    char items[5][24]; snprintf(items[0], 24, "RESUME"); snprintf(items[1], 24, "SOUND  %s", g->mute ? "OFF" : "ON"); snprintf(items[2], 24, "CRT FILTER  %s", g->pm_crt ? "ON" : "OFF");
+    snprintf(items[3], 24, "FULLSCREEN  %s", g->pm_fs ? "ON" : "OFF"); snprintf(items[4], 24, "QUIT GAME");
+    int wt = 14, x0 = 160 - (wt + 2) * 4, y0 = 62;
+    draw_panel(g, fb, x0, y0, wt, 5);
+    put5(g, fb, "OPTIONS", x0 + ((wt + 2) * 8 - 7 * 6) / 2, y0 + 12);
+    uint32_t c = g->pal[10][0] | g->pal[10][1] << 8 | g->pal[10][2] << 16 | 0xFF000000u;
+    for (int i = 0; i < 5; i++) {
+        int y = y0 + 22 + 8 * i, x = x0 + 24;
+        if (i == g->pm_sel) for (int k = 0; k < 5; k++) for (int j = 0; j <= (k < 3 ? k : 4 - k); j++) fb[(y + k) * SCREEN_W + x - 10 + j] = c;
+        put5(g, fb, items[i], x, y);
+    }
+}
 static void draw_scroll(const Game *g, uint32_t *fb) {
     const char *str = g->scroll_str; int len = (int)strlen(str);
     int maxw = 12, d0 = len - 48; if (d0 >= 0) { do { maxw++; d0 -= maxw; } while (d0 > 0); }        /* chars per line grows with the text */
@@ -1802,6 +1828,7 @@ void game_render(const Game *g, uint32_t *fb) {
     if (g->scroll_t > 0) draw_scroll(g, fb);
     if (g->map_open && g->has_scroll) draw_map(g, fb);
     if (g->status_open && g->has_scroll) draw_status(g, fb);
+    if (g->pm_open && g->has_scroll) draw_menu(g, fb);
 }
 
 /* Debug aid for the headless driver: put the hero somewhere. */
@@ -1822,7 +1849,7 @@ int game_debug_text(const Game *g, char *buf, int n) {
 }
 
 /* Level change: the hero's character (health, gold, experience, day count, poison and protection) goes with him; the rucksack stays behind because item ids are level-specific (unverified against the original). */
-void game_carry(Game *dst, const Game *src) { dst->energy = src->energy; dst->gold = src->gold; dst->xp = src->xp; dst->level = src->level; dst->score = src->score; dst->day = src->day; dst->poison = src->poison; dst->poison_t = src->poison_t; dst->prot = src->prot; dst->prot_amt = src->prot_amt; 
+void game_carry(Game *dst, const Game *src) { dst->mute = src->mute; dst->energy = src->energy; dst->gold = src->gold; dst->xp = src->xp; dst->level = src->level; dst->score = src->score; dst->day = src->day; dst->poison = src->poison; dst->poison_t = src->poison_t; dst->prot = src->prot; dst->prot_amt = src->prot_amt; 
     for (int i = 0; i < src->ninv && dst->ninv < 64; i++) {                       /* the rucksack: only items in the level code's carry table survive, under their new ids, keeping their charges, doses and flags */
         int op = src->inv[i];
         for (int k = 0; k < src->ncarry; k++) if (src->carry_old[k] == op && src->carry_slot[k] < 256) {
@@ -1844,3 +1871,6 @@ void game_cycle_room(Game *g, int dir) {
 void game_play_sound(Game *g, int snd) { play_sound(g, snd); }   /* debug/test: trigger a sound id */
 
 void game_play_sound_test(Game *g, int id) { play_sound(g, id); }   /* test hook (tests/sound.c) */
+
+int game_menu_request(Game *g) { int r = g->pm_req; g->pm_req = 0; return r; }
+void game_menu_status(Game *g, int crt, int fullscreen) { g->pm_crt = crt; g->pm_fs = fullscreen; }
