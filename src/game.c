@@ -281,6 +281,7 @@ void game_audio_mix(Game *g, int16_t *out, int n, int rate) {
 /* Original $10836: add a signed amount to energy; heal plays sound $19, damage $1b; at zero the hero dies (sound $1c, $15) and the game restarts. */
 static void change_energy(Game *g, int delta) {
     if (delta < 0 && g->atk_mask > 0 && g->atk_mask < 0x80 && (g->atk_mask & g->prot)) { delta += g->prot_amt; if (delta > 0) delta = 0; if (delta == 0) return; }   /* protection spell: contact damage of a matching type is reduced by its strength ($f770) */
+    if (g->tmr[0x27]) return;                                                   /* timer $27 running: $10836 changes nothing (invulnerable, and no healing either) */
     play_sound(g, delta < 0 ? 0x1b : 0x19);
     g->energy += delta;
     if (g->energy > ENERGY_MAX) g->energy = ENERGY_MAX;
@@ -780,6 +781,11 @@ static void exec_verb(Game *g, int verb) {
             case 6: case 8: case 11: case 12: g->prot |= 1 << (ef == 6 ? 0 : ef == 8 ? 1 : ef == 11 ? 2 : 3); g->prot_amt = am; say(g, 44); break;
             case 7: say(g, 43); break;
             case 13: if (g->poison) { g->poison = 0; say(g, 45); } break;
+            case 9: { int need = ENERGY_MAX / 2 - g->energy; if (need >= 0) change_energy(g, need); break; }   /* $96784: heal up to half of the maximum; nothing when already above it */
+            case 14: g->prot = 0x7f; g->prot_amt = am; say(g, 44); break;                         /* $9681c: every protection type at once */
+            case 15: g->tmr[0x27] = (uint8_t)am; break;                                           /* $96824: timer $27 = no energy change at all */
+            case 16: g->tmr[0x28] = (uint8_t)am; break;                                           /* $9682a: timer $28 */
+            case 17: change_energy(g, -32000); break;                                             /* $96836: d0 = $8300 into the energy service: a killing draught */
             default: break; }
             return;
         }
