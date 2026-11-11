@@ -781,6 +781,9 @@ static void exec_verb(Game *g, int verb) {
             case 6: case 8: case 11: case 12: g->prot |= 1 << (ef == 6 ? 0 : ef == 8 ? 1 : ef == 11 ? 2 : 3); g->prot_amt = am; say(g, 44); break;
             case 7: say(g, 43); break;
             case 13: if (g->poison) { g->poison = 0; say(g, 45); } break;
+            case 1: g->tmr[0x23] = (uint8_t)am; break;                                           /* $967a2: step size 2, timer $23 */
+            case 2: g->tmr[0x21] = (uint8_t)am; break;                                           /* $967b4: the higher jump program, timer $21 */
+            case 3: g->tmr[0x20] = (uint8_t)am; break;                                           /* $967c6: timer $20 reverses the walking direction */
             case 9: { int need = ENERGY_MAX / 2 - g->energy; if (need >= 0) change_energy(g, need); break; }   /* $96784: heal up to half of the maximum; nothing when already above it */
             case 14: g->prot = 0x7f; g->prot_amt = am; say(g, 44); break;                         /* $9681c: every protection type at once */
             case 15: g->tmr[0x27] = (uint8_t)am; break;                                           /* $96824: timer $27 = no energy change at all */
@@ -837,6 +840,7 @@ static int try_step_up(Game *g, Room *r, int dx, int dy) {
 /* Jump profile measured in the original (hero z above the take-off height after each logic tick; 20 ticks, apex 35). */
 /* Jump arc: the original program at $5736 (per-tick z deltas 5,5,4,4,4,4,3,3,2,1,-1,-2,-3,-3,-4,-4,-4,-4,-5,-5,-5,-6,-6,-7,-7,-8), as running totals from the takeoff height. */
 static const int JUMP_Z[26] = {5,10,14,18,22,26,29,32,34,35,34,32,29,26,22,18,14,10,5,0,-5,-11,-17,-24,-31,-39};
+static const int JUMP_Z2[19] = {8,16,22,28,34,40,44,48,50,51,50,48,44,40,34,28,22,16,8};    /* the higher jump of potion effect 2 (program at $1cc+$1c = $5752: 8,8,6,6,6,6,4,4,2,1,-1,-2,-4,-4,-6,-6,-6,-6,-8), then gravity */
 static int hero_grounded(const Game *g, const Room *r) {
     const Obj *h = &g->hero; Box hb = box_of(g, h); int rest = 0;
     for (int i = 0; i < r->nobj; i++) {
@@ -1228,6 +1232,7 @@ void game_tick(Game *g, int joy) {
     g->moving = 0;
     if (dx || dy) {
         g->facing = joy & 15; g->moving = 1;
+        if (g->tmr[0x20]) { dx = -dx; dy = -dy; }                          /* timer $20 (potion effect 3): the step is negated at $7036/$728e, the hero walks backwards */
         Obj *pulled = NULL;                                                      /* MOVE (pull mode): the chosen object follows when the hero walks away from it */
         if (g->pull_pid && g->pull_room == g->cur) {
             for (int i = 0; i < r->nobj; i++) if (r->objs[i].pid == g->pull_pid) { pulled = &r->objs[i]; break; }
@@ -1241,7 +1246,8 @@ void game_tick(Game *g, int joy) {
                 int ty = g->spr[q->slot].b1d; if (pushable(g, q)) { snd = 16; break; } snd = ty >= 0 && ty < 19 ? touch_tab[ty] : 57; }
             if (snd < 0) snd = 0; else if (snd != g->touch_snd) { if (g->touch_snd) stop_sound(g, g->touch_snd); if (snd) play_sound(g, snd); } if (snd != g->touch_snd && g->touch_snd) stop_sound(g, g->touch_snd); g->touch_snd = snd; g->touch_seen = 1;
         }
-        if (try_move(g, r, h, dx, dy, 0)) { if (pulled) try_move(g, r, pulled, dx, dy, 0); }
+        if (try_move(g, r, h, dx, dy, 0)) { if (pulled) try_move(g, r, pulled, dx, dy, 0);
+            if (g->tmr[0x23] && try_move(g, r, h, dx, dy, 0) && pulled) try_move(g, r, pulled, dx, dy, 0); }      /* timer $23 (potion effect 1): $8e7/$8e8 = 2, two units per tick */
         else {
             int nx = h->x + dx, ny = h->y + dy;
             int out = nx >= r->sx * 8 || ny >= r->sy * 8 || nx - HERO_FX + 1 < MARGIN || ny - HERO_FY + 1 < MARGIN;
@@ -1275,7 +1281,7 @@ void game_tick(Game *g, int joy) {
         }
     }
     if (g->jump_t) {
-        int prevz = h->z, nz = g->jump_z0 + JUMP_Z[g->jump_t - 1], land = -1;
+        int prevz = h->z, nz = g->jump_z0 + (g->tmr[0x21] ? JUMP_Z2 : JUMP_Z)[g->jump_t - 1], land = -1;
         if (g->jump_t > 10 || nz < prevz) {                                   /* descending: land on the highest object top passed through */
             Box hb = box_of(g, h);
             for (int i = 0; i < r->nobj; i++) {
@@ -1287,7 +1293,7 @@ void game_tick(Game *g, int joy) {
         }
         if (land >= 0) { h->z = land; g->jump_t = 0; }
         else if (nz <= 0 && g->jump_t > 10) { h->z = 0; g->jump_t = 0; }
-        else { h->z = nz; if (++g->jump_t > 26) { g->jump_t = 0; g->fall_t = 0; } }
+        else { h->z = nz; if (++g->jump_t > (g->tmr[0x21] ? 19 : 26)) { g->jump_t = 0; g->fall_t = 0; } }
     }
     else hero_gravity(g, r);
     /* Room zones ($8b54): the hero's box overlapping zone n of the room runs the room's event-0x0f block for n (blocks without the keep bit run once). Rooms with pits and plates are handled below. */
