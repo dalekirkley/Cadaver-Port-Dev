@@ -854,7 +854,9 @@ static int fire_weapon(Game *g) {
     Obj m; memset(&m, 0, sizeof m); m.slot = MISSILE_SLOT; m.pid = MISSILE_PID + (g->spawn_pid++ & 255);
     m.x = h->x + dx * 4; m.y = h->y + dy * 4; m.z = h->z + 10; m.vx = dx; m.vy = dy; m.life = 40;
     r->objs[r->nobj++] = m; play_sound(g, 0x14);
-    if (bag >= 0 && bag < 1024 && g->rng_ok[bag] && --g->shots_left[bag] <= 0) say(g, 15);          /* "THAT WAS YOUR LAST SHOT" */
+    if (bag >= 0 && bag < 1024 && g->rng_ok[bag] && --g->shots_left[bag] <= 0) {                   /* the last stone: "THAT WAS YOUR LAST SHOT", and the empty bag is gone for good */
+        say(g, 15); g->inv_hold = -1;
+        for (int i = 0; i < g->ninv; i++) if (g->inv[i] == bag) { inv_remove(g, i); break; } }
     return 1;
 }
 /* Throwing ($9b88 -> $9bd4): fire with any other item held (a sword, a helm, a key...) sends it out of the hand in the facing direction. It arcs through the air (z rises, then falls) and lands as an ordinary object; a creature in the way is hurt like by a stone. */
