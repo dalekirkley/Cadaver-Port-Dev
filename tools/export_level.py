@@ -460,4 +460,12 @@ if _ci<35 and _ent[_ci][0]:
         cy.append((o_,n_,sl))
 P('B',1);P('H',len(cy))
 for t in cy:P('HHH',*t)
+# map flags (optional, after the carry table): the room record's byte +0x17 per room; the magic map (spell 4, $9a2) draws every room whose bit 7 is clear. B 1, 100 x B.
+mf=bytearray(100)
+for n_ in range(100):
+    try:
+        rm_=L.g3.rec(n_)
+        if len(rm_)>0x17:mf[n_]=rm_[0x17]
+    except Exception:pass
+P('B',1);o+=bytes(mf)
 open(out,'wb').write(o);print(len(o),'bytes,',len(exam),'examine texts')
