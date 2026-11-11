@@ -447,7 +447,7 @@ if _ci<35 and _ent[_ci][0]:
     import lzhuf as _lz
     _code=_lz.decode(_d,_ent[_ci][0]*512)
     _p=4+u16(_code,4+8)
-    try:L2=Level(adf,gb,lvl+1)
+    try:L2=Level(adf,gb,lvl+1) if _ent[7*lvl][0] else None   # the next level may not exist on the disk
     except Exception:L2=None
     while _p+4<=len(_code) and u16(_code,_p)<0x8000 and len(cy)<64:
         o_,n_=u16(_code,_p),u16(_code,_p+2);_p+=4
