@@ -47,7 +47,7 @@ struct Game {
     int cur;
     Obj hero;                         /* hero.slot = 8 */
     int facing, anim_t, moving;
-    uint8_t font[46 * 24], fontmap[32]; char **text; int ntext; int day; int energy; int jump_t, jump_z0;
+    uint8_t font[46 * 24], fontmap[32]; char **text; int ntext; int day; int energy; int jump_t, jump_z0, fall_t;
     int has_scroll, old_data; uint8_t spl_ok[1024], spl_no[1024], spl_pow[1024], spl_fl[1024], spl_chg[1024]; uint8_t rng_ok[1024], rng_shots[1024]; uint16_t rng_ammo[1024]; uint8_t hit_ok[1024], hit_dmg[1024], hit_bit[1024]; int shots_left[1024]; uint8_t cons_ok[1024], cons_eff[1024], cons_amt[1024], cons_left[1024], cons_fl[1024]; int flash_t, tmr_t; uint8_t tmr[64]; unsigned aud_seed; int poison, poison_t, prot, prot_amt, atk_mask; uint8_t cre_hp[1024], cre_imm[1024], cre_fl6[1024], cre_ok[1024], spawn_snd[256], mvstate[1024], kill_ok[1024], kill_rew[1024], kill_fl[1024];   /* 0 = unknown, else movement state + 1 (3 = chase the hero) */  uint8_t scroll_tiles[18 * 32], scroll_map[0x30], font5[46 * 20]; int nexam, nuse, ntake; uint16_t take_pid[512]; int16_t take_gold[512], take_xp[512]; uint8_t counter[256], gflag[256], on_pl[1024], trap_done[1024]; uint16_t hit_pos[1024]; uint8_t zn_n[100], zn_f[100], zn_b[100][4][6]; int dly_arg, dly_t; int nuo; uint8_t uo_on[256]; uint16_t uo_pid[256], uo_item[256]; uint8_t uo_len[256], uo_code[256][256]; uint32_t gbits; int nhid; struct { int room; Obj o; } hid[1024]; int hurt_cd, touch_snd, touch_seen; unsigned rng_seed, rng_last; int ent_tick; uint8_t rs_done[100][16]; uint8_t *aprog[256]; int aprog_len[256], asec[256][4], asec_n[256]; struct { uint8_t has, mode, frame, rev, pc, cnt, rel; } plan[1024]; int want_level; int pull_pid, pull_room; int spawn_pid; int rs_period[100], rs_nb[100]; uint8_t *rs_blk[100][16]; int tm_room, tm_left; uint8_t mv_prog[1024][96]; uint8_t mv_len[1024], mv_step[1024][3], mv_pat[1024]; int lvl1; int nch; uint16_t ch_pid[64], ch_cont[64], ch_key[64]; uint8_t ch_flags[64], ch_trap[64]; int dbg, dbg_verb, dbg_pid, dbg_ran, dbg_execs; unsigned dbg_log[4][3]; unsigned char dbg_tr[48]; int dbg_ntr; int nvm; uint16_t vm_pid[256]; uint8_t vm_len[256], vm_code[256][255]; uint16_t exam_pid[512], exam_text[512], use_pid[512], use_text[512];   /* examine scroll */
     int scroll_t; char scroll_str[256]; long score; int map_open, map_px, map_py, status_open; long gold, xp, level; uint8_t visited[100];
     int has_icons; uint8_t icons[20 * 112]; uint16_t slotpos[8][4]; uint8_t verbtab[16];
@@ -831,7 +831,9 @@ static void hero_gravity(Game *g, Room *r) {
         if (qb.x1 < hb.x0 || hb.x1 < qb.x0 || qb.y1 < hb.y0 || hb.y1 < qb.y0) continue;
         if (qb.z1 + 1 <= h->z && qb.z1 + 1 > rest) rest = qb.z1 + 1;
     }
-    if (h->z > rest) { h->z -= 4; if (h->z < rest) h->z = rest; }
+    /* Falling uses the original's gravity ramp ($5767, installed as the hero's vertical program at $6af6 when nothing supports him): 1,1,2,2,3,3,3,4,4,5,5,5,6,6,6,7,7,7,7,8 per tick, then 8. */
+    static const int RAMP[20] = { 1, 1, 2, 2, 3, 3, 3, 4, 4, 5, 5, 5, 6, 6, 6, 7, 7, 7, 7, 8 };
+    if (h->z > rest) { h->z -= RAMP[g->fall_t < 19 ? g->fall_t : 19]; g->fall_t++; if (h->z < rest) h->z = rest; } else g->fall_t = 0;
 }
 
 
@@ -1126,7 +1128,7 @@ void game_tick(Game *g, int joy) {
     } else if (fire_edge && held_ranged(g)) { fire_weapon(g); joy &= ~15;
     } else if (fire_edge && g->inv_hold >= 0 && held_class(g) >= 0 && (g->target < 0 || g->nverbs == 0 || (g->rooms[g->cur].objs[g->target].pid >= 0 && has_contact_script(g, &g->rooms[g->cur].objs[g->target]))) && throw_held(g)) { joy &= ~15;   /* any other held item is thrown ($9b88) */
     } else if (fire_edge && g->target >= 0 && g->nverbs > 0) { g->menu = 1; g->sel = 0; joy &= ~15; }
-    else if (fire_edge && g->target < 0 && !g->jump_t && hero_grounded(g, r)) { g->jump_t = 1; g->jump_z0 = h->z; }    /* fire with nothing in front: jump */
+    else if (fire_edge && g->target < 0 && !g->jump_t && hero_grounded(g, r)) { g->jump_t = 1; g->jump_z0 = h->z; g->fall_t = 0; }    /* fire with nothing in front: jump */
     int dx = ((joy & JOY_RIGHT) ? 1 : 0) - ((joy & JOY_LEFT) ? 1 : 0);
     int dy = ((joy & JOY_DOWN) ? 1 : 0) - ((joy & JOY_UP) ? 1 : 0);
     g->tickno++;
